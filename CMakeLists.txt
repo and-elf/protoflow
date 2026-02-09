@@ -37,6 +37,7 @@ option(BUILD_TRANSPORT_TCP "Build protoflow-transport-tcp library" OFF)
 option(BUILD_TRANSPORT_UNIX "Build protoflow-transport-unix library" OFF)
 option(BUILD_TRANSPORT_MQTT "Build protoflow-transport-mqtt library" OFF)
 option(BUILD_HTML_FRAGMENT "Build protoflow-html-fragment library" OFF)
+option(BUILD_HTTP "Build protoflow-http library" OFF)
 option(BUILD_MAIN_APP "Build main application" OFF)
 
 # Include CMake modules
@@ -100,6 +101,10 @@ if(BUILD_HTML_FRAGMENT)
     add_subdirectory(libs/protoflow-html-fragment)
 endif()
 
+if(BUILD_HTTP)
+    add_subdirectory(libs/protoflow-http)
+endif()
+
 # Applications
 if(BUILD_MAIN_APP)
     add_subdirectory(apps/main-app)
@@ -149,6 +154,7 @@ message(STATUS "  logging:               ${BUILD_LOGGING}")
 message(STATUS "  service:               ${BUILD_SERVICE}")
 message(STATUS "  fsm:                   ${BUILD_FSM}")
 message(STATUS "  rpc:                   ${BUILD_RPC}")
+message(STATUS "  http:                  ${BUILD_HTTP}")
 message(STATUS "  transport-tcp:         ${BUILD_TRANSPORT_TCP}")
 message(STATUS "  transport-mqtt:        ${BUILD_TRANSPORT_MQTT}")
 message(STATUS "  transport-unix:        ${BUILD_TRANSPORT_UNIX}")
