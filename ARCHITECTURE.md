@@ -62,6 +62,14 @@ Logging infrastructure:
 - Observable behavior tracking
 - FSM state logging
 
+#### `protoflow-service`
+Service base class and mailbox infrastructure:
+- Base `Service` class with inbound/outbound mailboxes
+- `Mailbox<T>` template for thread-safe message queues
+- `poll()` interface for runtime scheduler
+- One message per service per cycle enforcement
+- Message routing abstraction
+
 ### Protocol & State Management
 
 #### `protoflow-fsm`
@@ -301,6 +309,7 @@ GET /api/state
 - [ ] `protoflow-runtime` - message router and scheduler
 - [ ] `protoflow-messaging` - queue abstractions
 - [ ] `protoflow-logging` - logging infrastructure
+- [ ] `protoflow-service` - service base class and mailbox
 
 ### Phase 2: Protocol & State
 - [ ] `protoflow-fsm` - state machine framework
@@ -364,6 +373,7 @@ protoflow/
 │   ├── protoflow-runtime/
 │   ├── protoflow-messaging/
 │   ├── protoflow-logging/
+│   ├── protoflow-service/
 │   ├── protoflow-fsm/
 │   ├── protoflow-rpc/
 │   ├── protoflow-transport-tcp/

@@ -67,6 +67,7 @@ protoflow/
 │   ├── protoflow-runtime/
 │   ├── protoflow-messaging/
 │   ├── protoflow-logging/
+│   ├── protoflow-service/
 │   ├── protoflow-fsm/
 │   ├── protoflow-rpc/
 │   ├── protoflow-transport-tcp/
@@ -85,6 +86,7 @@ protoflow/
 - **protoflow-runtime**: Core runtime, message router, and scheduler
 - **protoflow-messaging**: Message passing infrastructure
 - **protoflow-logging**: Policy-injected logging with sinks
+- **protoflow-service**: Service base class and mailbox infrastructure
 - **protoflow-fsm**: Compile-time validated finite state machines
 - **protoflow-rpc**: TCP-based RPC framework
 - **protoflow-transport-tcp**: TCP transport adapter

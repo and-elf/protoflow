@@ -17,6 +17,7 @@ target_link_libraries(protoflow-main-app
         protoflow::runtime
         protoflow::messaging
         protoflow::logging
+        protoflow::service
         protoflow::fsm
         protoflow::rpc
         protoflow::transport-tcp
