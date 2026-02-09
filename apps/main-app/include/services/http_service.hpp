@@ -65,6 +65,8 @@ protected:
     std::vector<messaging::Message> generate_outbound() override;
 
 private:
+    friend class HTTPServiceTest;  // Allow tests to access private members
+    
     /// Handle incoming HTTP request
     HttpResponse handle_request(const HttpRequest& request);
 
