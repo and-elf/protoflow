@@ -177,20 +177,84 @@ HttpResponse HTTPService::serve_state_api(const HttpRequest& request) {
 void HTTPService::handle(service::Message&& msg) {
     // Handle navigation responses
     if (auto* nav_response = std::get_if<NavigationResponse>(&msg.payload)) {
-        // Find corresponding pending request and build response
-        // For now, store for later processing
+        PROTOFLOW_LOG_INFO(*this, "Received NavigationResponse");
+        
+        // Build HTTP response with navigation HTML
+        HttpResponse response;
+        response.set_html(nav_response->html_fragment);
+        pending_responses_.push_back(std::move(response));
     }
     // Handle state responses
     else if (auto* state_response = std::get_if<StateResponse>(&msg.payload)) {
-        // Process state response
+        PROTOFLOW_LOG_INFO(*this, "Received StateResponse");
+        
+        // Build HTTP response with state data
+        HttpResponse response;
+        // Content is already formatted as JSON or HTML
+        if (state_response->content.starts_with("{") || state_response->content.starts_with("[")) {
+            response.set_json(state_response->content);
+        } else {
+            response.set_html(state_response->content);
+        }
+        pending_responses_.push_back(std::move(response));
     }
     // Handle fragment responses
     else if (auto* frag_response = std::get_if<FragmentResponse>(&msg.payload)) {
-        // Process fragment response
+        PROTOFLOW_LOG_INFO(*this, "Received FragmentResponse for " 
+                          << frag_response->app_name << frag_response->endpoint);
+        
+        HttpResponse response;
+        response.status_code = frag_response->status_code;
+        
+        if (frag_response->html_fragment) {
+            // Fragment is already complete HTML, use it directly
+            response.set_html(*frag_response->html_fragment);
+        } else {
+            response.set_html("<html><body><h1>404 Not Found</h1><p>App or endpoint not found</p></body></html>");
+        }
+        
+        pending_responses_.push_back(std::move(response));
     }
     // Handle log responses (from LoggingService)
     else if (auto* log_response = std::get_if<logging::LogResponse>(&msg.payload)) {
-        // Process log response and build JSON/HTML
+        PROTOFLOW_LOG_INFO(*this, "Received LogResponse with " 
+                          << log_response->logs.size() << " logs (total matches: " 
+                          << log_response->total_matches << ")");
+        
+        HttpResponse response;
+        
+        // Build JSON response with log data
+        std::ostringstream json;
+        json << "{\n";
+        json << "  \"total\": " << log_response->total_matches << ",\n";
+        json << "  \"count\": " << log_response->logs.size() << ",\n";
+        json << "  \"logs\": [\n";
+        
+        for (size_t i = 0; i < log_response->logs.size(); ++i) {
+            const auto& log = log_response->logs[i];
+            
+            // Convert timestamp to ISO 8601 string
+            auto time_t = std::chrono::system_clock::to_time_t(log.timestamp);
+            std::tm tm_buf{};
+            gmtime_r(&time_t, &tm_buf);
+            char timestamp_buf[64];
+            std::strftime(timestamp_buf, sizeof(timestamp_buf), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
+            
+            json << "    {\n";
+            json << "      \"timestamp\": \"" << timestamp_buf << "\",\n";
+            json << "      \"level\": \"" << to_string(log.level) << "\",\n";
+            json << "      \"source\": " << log.source << ",\n";
+            json << "      \"message\": \"" << log.message << "\"\n";
+            json << "    }";
+            if (i < log_response->logs.size() - 1) json << ",";
+            json << "\n";
+        }
+        
+        json << "  ]\n";
+        json << "}\n";
+        
+        response.set_json(json.str());
+        pending_responses_.push_back(std::move(response));
     }
 }
 
