@@ -13,6 +13,7 @@
 #include "html/render_ctx.hpp"
 #include "html/tag.hpp"
 #include "html/text.hpp"
+#include "html/components.hpp"
 
 namespace protoflow {
 // Re-export html namespace for convenience

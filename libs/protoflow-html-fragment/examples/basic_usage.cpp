@@ -3,17 +3,28 @@
 
 using namespace protoflow::html;
 
+// Example: Using semantic components
+auto create_status_display() {
+    return container(
+        section_with_title(
+            h2(text("System Status")),
+            status_ok(text("All systems operational")),
+            metric(text("CPU Usage"), text("23%"), text(""))
+        )
+    );
+}
+
 // Example: Create a simple status display
 auto create_greeting() {
     return div(text("Hello World"));
 }
 
-// Example: Create a status card
+// Example: Create a status card using components
 auto create_card() {
-    return div(
-        attrs<class_<"card">>{},
-        h1(text("Dashboard")),
-        p(text("System Status: Online"))
+    return card(
+        h3(text("Process Monitor")),
+        data_row(text("Status:"), badge_success(text("Running"))),
+        data_row(text("Uptime:"), text("48h 32m"))
     );
 }
 
@@ -29,27 +40,32 @@ auto create_menu() {
     );
 }
 
-// Example: Create a data table
+// Example: Create a data table with semantic components
 auto create_table() {
     return table(
         attrs<class_<"data-table">>{},
         thead(
-            tr(
-                th(text("Name")),
-                th(text("Status")),
-                th(text("Value"))
+            table_row(
+                table_header_cell(text("Process")),
+                table_header_cell(text("Status")),
+                table_header_cell(text("CPU"))
             )
         ),
         tbody(
-            tr(
-                td(text("Sensor 1")),
-                td(span(attrs<class_<"badge-ok">>{}, text("OK"))),
-                td(text("23.5°C"))
+            table_row(
+                table_data_cell(text("nginx")),
+                table_data_cell(badge_success(text("OK"))),
+                table_data_cell(text("2.3%"))
             ),
-            tr(
-                td(text("Sensor 2")),
-                td(span(attrs<class_<"badge-ok">>{}, text("OK"))),
-                td(text("45.2%"))
+            table_row(
+                table_data_cell(text("postgres")),
+                table_data_cell(badge_success(text("OK"))),
+                table_data_cell(text("5.7%"))
+            ),
+            table_row(
+                table_data_cell(text("redis")),
+                table_data_cell(badge_warning(text("HIGH MEM"))),
+                table_data_cell(text("1.2%"))
             )
         )
     );
@@ -95,6 +111,10 @@ auto create_dashboard() {
 }
 
 int main() {
+    // Component example
+    std::cout << "=== Status Display (Components) ===" << std::endl;
+    std::cout << to_html(create_status_display()) << std::endl << std::endl;
+    
     // Simple example
     std::cout << "=== Simple Greeting ===" << std::endl;
     std::cout << to_html(create_greeting()) << std::endl << std::endl;
