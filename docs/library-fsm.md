@@ -20,19 +20,19 @@ Finite State Machine library with compile-time validation and observable behavio
 ```cpp
 auto fsm = make_fsm(
     "app_registration",
-    when<AppState::Unregistered>(AppEvent::Register)
+    when<AppState::Unregistered, AppEvent::Register>()
         .then(register_app)
         .to<AppState::Registered>()
 
-    | when<AppState::Registered>(AppEvent::Heartbeat)
+    | when<AppState::Registered, AppEvent::Heartbeat>()
         .then(update_heartbeat)
         .to<AppState::Alive>()
 
-    | when<AppState::Alive>(AppEvent::Heartbeat)
+    | when<AppState::Alive, AppEvent::Heartbeat>()
         .then(update_heartbeat)
         .stay()
 
-    | when<AppState::Alive>(AppEvent::Timeout)
+    | when<AppState::Alive, AppEvent::Timeout>()
         .then(mark_dead)
         .to<AppState::Dead>()
 
@@ -40,7 +40,8 @@ auto fsm = make_fsm(
         .then(reset_app)
         .to<AppState::Unregistered>(),
     
-    sink
+    sink,
+    AppState::Unregistered  // initial state
 );
 ```
 
@@ -52,8 +53,10 @@ FSMs **must** define an `otherwise()` transition.
 ```cpp
 auto fsm = make_fsm(
     "incomplete",
-    when<Unregistered>(Register).then(reg).to<Registered>()
-  | when<Registered>(Heartbeat).then(hb).to<Alive>()
+    when<Unregistered, Register>().then(reg).to<Registered>()
+  | when<Registered, Heartbeat>().then(hb).to<Alive>(),
+    sink,
+    Unregistered
 );
 ```
 
@@ -66,9 +69,11 @@ static assertion failed: FSM must define an otherwise() transition
 ```cpp
 auto fsm = make_fsm(
     "complete",
-    when<Unregistered>(Register).then(reg).to<Registered>()
-  | when<Registered>(Heartbeat).then(hb).to<Alive>()
-  | otherwise().then(reset).to<Unregistered>()
+    when<Unregistered, Register>().then(reg).to<Registered>()
+  | when<Registered, Heartbeat>().then(hb).to<Alive>()
+  | otherwise().then(reset).to<Unregistered>(),
+    sink,
+    Unregistered
 );
 ```
 

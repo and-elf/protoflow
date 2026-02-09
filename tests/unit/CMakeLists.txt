@@ -1,6 +1,7 @@
 # Unit tests
 
 # Add library test subdirectories
+add_subdirectory(libs/protoflow-fsm)
 add_subdirectory(libs/protoflow-messaging)
 add_subdirectory(libs/protoflow-logging)
 add_subdirectory(libs/protoflow-rpc)
