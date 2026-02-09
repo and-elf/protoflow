@@ -56,6 +56,7 @@ bool Runtime::initialize() {
     logger_->set_console_output(logging_config.console_output);
     logger_->set_min_level(logging_config.min_level);
     logger_->set_max_stored_logs(logging_config.max_stored_logs);
+    services_.push_back(logger_.get());
 
     // Initialize message router
     std::cout << "  - Initializing message router...\n";
@@ -160,12 +161,24 @@ void Runtime::cycle() {
 
 void Runtime::route_messages() {
     // Collect outbound messages from all services
-    // Route to appropriate destination services
-    // This is a simplified implementation
-    // In a full implementation, this would use the router_ to properly route messages
-    
-    // For now, we just let services handle their own message routing
-    // via direct service-to-service communication through shared state
+    for (auto* service : services_) {
+        auto outbound = service->generate_outbound();
+        
+        // Route each message to its destination
+        for (auto& msg : outbound) {
+            // Find destination service by ID
+            auto dest_it = std::ranges::find_if(services_, [&](auto* s) {
+                return s->get_id() == msg.header.destination;
+            });
+            
+            if (dest_it != services_.end()) {
+                // Deliver message to destination service
+                (*dest_it)->handle(std::move(msg));
+            }
+            // If destination not found, message is silently dropped
+            // (could log this in a real implementation)
+        }
+    }
 }
 
 } // namespace protoflow::mainapp

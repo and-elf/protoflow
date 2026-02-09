@@ -1,5 +1,4 @@
 #include "services/http_service.hpp"
-#include "services/app_registration_service.hpp"
 #include <protoflow/logging/macros.hpp>
 #include <sstream>
 
@@ -69,10 +68,6 @@ void HTTPService::register_endpoint(const std::string& method,
     endpoints_[key] = std::move(handler);
 }
 
-void HTTPService::set_app_registration_service(AppRegistrationService* service) {
-    app_registration_service_ = service;
-}
-
 HttpResponse HTTPService::handle_request(const HttpRequest& request) {
     std::string key = request.method + " " + request.path;
     
@@ -105,11 +100,8 @@ HttpResponse HTTPService::handle_request(const HttpRequest& request) {
 HttpResponse HTTPService::serve_home(const HttpRequest& request) {
     using namespace html;
     
-    // Build home page with navigation
-    auto nav = app_registration_service_ 
-        ? app_registration_service_->render_navigation()
-        : div(text("No navigation available"));
-    
+    // TODO: Send NavigationRequest message to AppRegistrationService
+    // For now, serve a basic page
     auto page = html_doc(
         head(
             title(text("Protoflow Main App")),
@@ -124,7 +116,6 @@ HttpResponse HTTPService::serve_home(const HttpRequest& request) {
             )"))
         ),
         body(
-            std::move(nav),
             div(
                 attr("class", "content"),
                 h1(text("Protoflow Main Application")),
@@ -147,42 +138,8 @@ HttpResponse HTTPService::serve_app_endpoint(const HttpRequest& request) {
     // Parse app name and endpoint from path
     // Format: /app/{app_name}/{endpoint}
     
-    std::string path = request.path;
-    if (path.starts_with("/app/")) {
-        path = path.substr(5); // Remove "/app/"
-        
-        auto slash_pos = path.find('/');
-        if (slash_pos != std::string::npos) {
-            std::string app_name = path.substr(0, slash_pos);
-            std::string endpoint = path.substr(slash_pos);
-            
-            if (app_registration_service_) {
-                auto fragment = app_registration_service_->proxy_fragment_request(
-                    app_name, endpoint
-                );
-                
-                if (fragment) {
-                    using namespace html;
-                    auto nav = app_registration_service_->render_navigation();
-                    
-                    auto page = html_doc(
-                        head(title(text(app_name + " - " + endpoint))),
-                        body(
-                            std::move(nav),
-                            div(
-                                attr("class", "content"),
-                                std::move(*fragment)
-                            )
-                        )
-                    );
-                    
-                    HttpResponse response;
-                    response.set_html(render(page));
-                    return response;
-                }
-            }
-        }
-    }
+    // TODO: Send FragmentRequest message to AppRegistrationService
+    // and wait for FragmentResponse
     
     HttpResponse response;
     response.status_code = 404;
@@ -193,13 +150,12 @@ HttpResponse HTTPService::serve_app_endpoint(const HttpRequest& request) {
 HttpResponse HTTPService::serve_state_api(const HttpRequest& request) {
     HttpResponse response;
     
+    // TODO: Send StateRequest message to AppRegistrationService
+    // and wait for StateResponse
+    
     if (accepts_json(request) || !accepts_html(request)) {
         // Return JSON
-        std::string state_json = app_registration_service_
-            ? app_registration_service_->aggregate_state_json()
-            : R"({"error": "App registration service not available"})";
-        
-        response.set_json(state_json);
+        response.set_json(R"({"error": "Not yet implemented - requires message-based communication"})");
     } else {
         // Return HTML representation
         using namespace html;
@@ -207,9 +163,7 @@ HttpResponse HTTPService::serve_state_api(const HttpRequest& request) {
             head(title(text("System State"))),
             body(
                 h1(text("System State")),
-                pre(text(app_registration_service_
-                    ? app_registration_service_->aggregate_state_json()
-                    : "Error: Service not available"))
+                pre(text("Not yet implemented - requires message-based communication"))
             )
         );
         

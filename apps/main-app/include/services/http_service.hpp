@@ -10,9 +10,6 @@
 
 namespace protoflow::mainapp {
 
-// Forward declarations
-class AppRegistrationService;
-
 /// HTTP request context
 struct HttpRequest {
     std::string method;
@@ -59,9 +56,6 @@ public:
                           const std::string& path, 
                           HttpHandler handler);
 
-    /// Set reference to app registration service for UI aggregation
-    void set_app_registration_service(AppRegistrationService* service);
-
 protected:
     void handle(messaging::Message&& msg) override;
     std::vector<messaging::Message> generate_outbound() override;
@@ -91,9 +85,6 @@ private:
     
     // Endpoint registry
     std::unordered_map<std::string, HttpHandler> endpoints_;
-    
-    // Reference to app registration service
-    AppRegistrationService* app_registration_service_ = nullptr;
     
     // HTTP server implementation (would be actual HTTP server)
     // For now, this is a placeholder
