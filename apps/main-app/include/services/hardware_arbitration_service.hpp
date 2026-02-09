@@ -3,26 +3,15 @@
 #include <protoflow/service.hpp>
 #include <protoflow/fsm.hpp>
 #include <protoflow/hw/protocol.hpp>
+#include <protoflow/config/hardware_config.hpp>
 #include <string>
 #include <unordered_map>
 #include <vector>
 #include <chrono>
 #include <optional>
 #include <memory>
-#include <fstream>
 
 namespace protoflow::mainapp {
-
-/// Hardware resource configuration
-struct HardwareResource {
-    std::string device;      // e.g., /dev/ttyUSB0
-    std::string mode;        // "exclusive" or "shared"
-    int max_clients = 1;     // for shared resources
-    std::chrono::seconds timeout{30};
-    hw::capability_flags capabilities = 
-        hw::capability_flags::can_read | 
-        hw::capability_flags::can_write;
-};
 
 /// Active hardware access session
 struct HardwareSession {
@@ -41,7 +30,7 @@ struct HardwareSession {
 /// Proxies all hardware I/O for registered apps
 class HardwareArbitrationService : public service::Service {
 public:
-    explicit HardwareArbitrationService(const std::string& config_path);
+    explicit HardwareArbitrationService(config::HardwareConfig resources);
     ~HardwareArbitrationService() override;
 
     void start() override;
@@ -83,9 +72,6 @@ protected:
     std::vector<messaging::Message> generate_outbound() override;
 
 private:
-    /// Load hardware configuration from file
-    bool load_config(const std::string& path);
-
     /// Check for expired sessions
     void check_timeouts();
 
@@ -107,8 +93,7 @@ private:
     /// Platform-specific: close hardware device
     void close_device(int fd);
 
-    std::string config_path_;
-    std::unordered_map<std::string, HardwareResource> resources_;
+    config::HardwareConfig resources_;
     std::unordered_map<hw::hw_handle, HardwareSession> sessions_;
     hw::hw_handle next_handle_{1};
     std::chrono::steady_clock::time_point last_timeout_check_;

@@ -9,8 +9,8 @@
 
 namespace protoflow::mainapp {
 
-HardwareArbitrationService::HardwareArbitrationService(const std::string& config_path)
-    : config_path_(config_path)
+HardwareArbitrationService::HardwareArbitrationService(config::HardwareConfig resources)
+    : resources_(std::move(resources))
     , last_timeout_check_(std::chrono::steady_clock::now())
 {
 }
@@ -26,15 +26,11 @@ HardwareArbitrationService::~HardwareArbitrationService() {
 
 void HardwareArbitrationService::start() {
     PROTOFLOW_LOG_INFO(*this, "Started");
+    PROTOFLOW_LOG_INFO(*this, "Managing " << resources_.size() << " hardware resources");
     
-    if (!load_config(config_path_)) {
-        PROTOFLOW_LOG_WARN(*this, "Failed to load config from " << config_path_);
-    } else {
-        PROTOFLOW_LOG_INFO(*this, "Loaded " << resources_.size() << " hardware resources");
-        for (const auto& [name, res] : resources_) {
-            PROTOFLOW_LOG_INFO(*this, "  - " << name << ": " << res.device 
-                              << " (mode: " << res.mode << ")");
-        }
+    for (const auto& [name, res] : resources_) {
+        PROTOFLOW_LOG_INFO(*this, "  - " << name << ": " << res.device 
+                          << " (mode: " << res.mode << ")");
     }
 }
 
@@ -228,76 +224,6 @@ void HardwareArbitrationService::handle(messaging::Message&& msg) {
 std::vector<messaging::Message> HardwareArbitrationService::generate_outbound() {
     // Generate responses for hardware operations
     return {};
-}
-
-bool HardwareArbitrationService::load_config(const std::string& path) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        return false;
-    }
-
-    // Simple INI-style parser
-    std::string line;
-    std::string current_section;
-    HardwareResource current_resource;
-
-    auto save_resource = [&]() {
-        if (!current_section.empty()) {
-            resources_[current_section] = current_resource;
-            current_resource = HardwareResource{};
-        }
-    };
-
-    while (std::getline(file, line)) {
-        // Remove comments and trim
-        auto comment_pos = line.find('#');
-        if (comment_pos != std::string::npos) {
-            line = line.substr(0, comment_pos);
-        }
-
-        // Trim whitespace
-        line.erase(0, line.find_first_not_of(" \t"));
-        line.erase(line.find_last_not_of(" \t\r\n") + 1);
-
-        if (line.empty()) continue;
-
-        // Section header
-        if (line.front() == '[' && line.back() == ']') {
-            save_resource();
-            current_section = line.substr(1, line.size() - 2);
-            continue;
-        }
-
-        // Key-value pair
-        auto eq_pos = line.find('=');
-        if (eq_pos != std::string::npos) {
-            std::string key = line.substr(0, eq_pos);
-            std::string value = line.substr(eq_pos + 1);
-            
-            // Trim key and value
-            key.erase(0, key.find_first_not_of(" \t"));
-            key.erase(key.find_last_not_of(" \t") + 1);
-            value.erase(0, value.find_first_not_of(" \t"));
-            value.erase(value.find_last_not_of(" \t") + 1);
-
-            if (key == "device") {
-                current_resource.device = value;
-            } else if (key == "mode") {
-                current_resource.mode = value;
-            } else if (key == "max_clients") {
-                current_resource.max_clients = std::stoi(value);
-            } else if (key == "timeout") {
-                // Parse timeout (e.g., "30s")
-                if (value.back() == 's') {
-                    int seconds = std::stoi(value.substr(0, value.size() - 1));
-                    current_resource.timeout = std::chrono::seconds(seconds);
-                }
-            }
-        }
-    }
-
-    save_resource();
-    return !resources_.empty();
 }
 
 void HardwareArbitrationService::check_timeouts() {

@@ -7,12 +7,18 @@ target_sources(protoflow-config
     PRIVATE
         src/ini_parser.cpp
         src/hardware_config.cpp
+        src/logging_config.cpp
 )
 
 target_include_directories(protoflow-config
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(protoflow-config
+    PUBLIC
+        protoflow::messaging  # For LogLevel enum
 )
 
 target_compile_features(protoflow-config PUBLIC cxx_std_23)

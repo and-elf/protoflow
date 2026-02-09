@@ -2,6 +2,8 @@
 #include "services/app_registration_service.hpp"
 #include "services/hardware_arbitration_service.hpp"
 #include "services/http_service.hpp"
+#include <protoflow/config/hardware_config.hpp>
+#include <protoflow/config/logging_config.hpp>
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -40,9 +42,20 @@ bool Runtime::initialize() {
 
     // Initialize logging
     std::cout << "  - Setting up logging...\n";
+    
+    // Load logging configuration
+    auto log_config = config::load_logging_config(config_.log_config_path);
+    if (!log_config) {
+        std::cerr << "      Warning: Failed to load logging config from " 
+                  << config_.log_config_path << "\n";
+        std::cerr << "      Using default logging configuration\n";
+    }
+    
+    auto logging_config = log_config.value_or(config::LoggingConfig{});
     logger_ = std::make_unique<logging::LoggingService>();
-    logger_->set_console_output(true);
-    logger_->set_min_level(logging::Level::Info);
+    logger_->set_console_output(logging_config.console_output);
+    logger_->set_min_level(logging_config.min_level);
+    logger_->set_max_stored_logs(logging_config.max_stored_logs);
 
     // Initialize message router
     std::cout << "  - Initializing message router...\n";
@@ -59,8 +72,17 @@ bool Runtime::initialize() {
 
     if (config_.enable_hardware_arbitration) {
         std::cout << "    * HardwareArbitrationService\n";
+        
+        // Load hardware configuration
+        auto hw_config = config::load_hardware_config(config_.hardware_config_path);
+        if (!hw_config) {
+            std::cerr << "      Warning: Failed to load hardware config from " 
+                      << config_.hardware_config_path << "\n";
+            std::cerr << "      Starting with empty hardware configuration\n";
+        }
+        
         auto hw_service = std::make_unique<HardwareArbitrationService>(
-            config_.hardware_config_path
+            hw_config.value_or(config::HardwareConfig{})
         );
         services_.push_back(std::move(hw_service));
     }
