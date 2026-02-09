@@ -72,7 +72,6 @@ protected:
         auto log_msg = LogMessage{level, text};
         auto msg = MessageBuilder{}
             .from(service_id_)
-            .to(logging_service_id_)
             .log(std::move(log_msg))
             .build();
         
@@ -91,11 +90,6 @@ protected:
     void set_service_id(protoflow::messaging::ServiceId id) {
         service_id_ = id;
     }
-    
-    /// Set logging service ID (called by runtime)
-    void set_logging_service_id(protoflow::messaging::ServiceId id) {
-        logging_service_id_ = id;
-    }
 
     /// Override to handle incoming messages
     virtual void handle(Message&& msg) = 0;
@@ -110,7 +104,6 @@ private:
     Mailbox<Message> inbound;
     Mailbox<Message> outbound;
     protoflow::messaging::ServiceId service_id_{0};
-    protoflow::messaging::ServiceId logging_service_id_{0};
 
     friend class protoflow::runtime::Runtime; // Runtime needs access to outbound queue
 };

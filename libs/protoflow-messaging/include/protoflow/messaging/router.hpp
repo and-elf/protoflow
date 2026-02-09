@@ -48,11 +48,6 @@ public:
     /// Route a message to its destination(s)
     /// Returns list of service IDs to deliver to
     [[nodiscard]] std::vector<ServiceId> route(const Message& msg) const {
-        // First check message header destination
-        if (msg.header.destination != 0) {
-            return {msg.header.destination};
-        }
-        
         // Check ID-based routes
         if (auto it = id_routes_.find(msg.header.id); it != id_routes_.end()) {
             return it->second;

@@ -19,7 +19,6 @@ public:
     using Service::log_error;
     using Service::log_fatal;
     using Service::set_service_id;
-    using Service::set_logging_service_id;
 };
 
 TEST(LoggingTest, LogLevelToString) {
@@ -81,13 +80,11 @@ TEST(LoggingTest, MessageBuilderWithLog) {
     auto msg = MessageBuilder{}
         .id(123)
         .from(1)
-        .to(2)
         .log(std::move(log))
         .build();
     
     EXPECT_EQ(123, msg.header.id);
     EXPECT_EQ(1, msg.header.source);
-    EXPECT_EQ(2, msg.header.destination);
     EXPECT_TRUE(msg.is_log());
     
     auto* log_ptr = std::get_if<logging::LogMessage>(&msg.payload);
@@ -99,7 +96,6 @@ TEST(LoggingTest, MessageBuilderWithLog) {
 TEST(LoggingTest, ServiceLoggingMethods) {
     TestService service;
     service.set_service_id(42);
-    service.set_logging_service_id(100);
     
     // These should create log messages without crashing
     service.log_trace("Trace");
@@ -114,7 +110,6 @@ TEST(LoggingTest, ServiceLoggingMethods) {
     while (auto msg = service.pop_outbound()) {
         EXPECT_TRUE(msg->is_log());
         EXPECT_EQ(42, msg->header.source);
-        EXPECT_EQ(100, msg->header.destination);
         count++;
     }
     EXPECT_EQ(6, count);

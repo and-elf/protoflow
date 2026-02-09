@@ -108,8 +108,11 @@ logging_service->add_callback([](const auto& log, auto source) {
 // Register with runtime
 runtime.register_service(LOGGING_SERVICE_ID, logging_service);
 
-// Configure other services to use this logging service
-my_service->set_logging_service_id(LOGGING_SERVICE_ID);
+// Set up routing: route all log messages to the logging service
+runtime.router().add_route(
+    [](const auto& msg) { return msg.is_log(); },
+    {LOGGING_SERVICE_ID}
+);
 ```
 
 ### Retrieving Stored Logs
@@ -167,9 +170,10 @@ target_link_libraries(my_service
 The logging system is fully integrated with the protoflow service architecture:
 
 1. Services emit log messages through the standard `write()` mechanism
-2. LoggingService receives and processes logs like any other message
-3. All logging is asynchronous and non-blocking
-4. No global state or singleton loggers
-5. Deterministic message ordering (logs are processed in order)
+2. Messages don't have destinations - the router determines where they go
+3. The runtime sets up a routing rule to direct all log messages to LoggingService
+4. All logging is asynchronous and non-blocking
+5. No global state or singleton loggers
+6. Deterministic message ordering (logs are processed in order)
 
-This design ensures logging doesn't interfere with the deterministic execution model of protoflow services.
+This design ensures logging doesn't interfere with the deterministic execution model of protoflow services, and follows proper message-driven architecture principles where routing is handled by the runtime, not embedded in messages.

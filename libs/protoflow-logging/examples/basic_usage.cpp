@@ -38,7 +38,13 @@ int main() {
     // Create example service
     auto example = std::make_shared<ExampleService>();
     example->set_service_id(1);
-    example->set_logging_service_id(0);
+    
+    // Note: In a real application, the runtime would set up routing rules
+    // to direct log messages to the logging service, e.g.:
+    // runtime.router().add_route(
+    //     [](const auto& msg) { return msg.is_log(); },
+    //     {LOGGING_SERVICE_ID}
+    // );
     
     // Log some messages
     example->log_info("Service initialized");

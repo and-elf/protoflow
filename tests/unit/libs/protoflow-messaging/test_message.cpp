@@ -7,15 +7,14 @@ TEST(MessageHeaderTest, DefaultConstruction) {
     MessageHeader header;
     EXPECT_EQ(header.id, 0u);
     EXPECT_EQ(header.source, 0u);
-    EXPECT_EQ(header.destination, 0u);
     EXPECT_EQ(header.priority, Priority::Normal);
     EXPECT_EQ(header.timestamp, 0u);
 }
 
 TEST(MessageHeaderTest, Equality) {
-    MessageHeader h1{1, 10, 20, Priority::High, 1000};
-    MessageHeader h2{1, 10, 20, Priority::High, 1000};
-    MessageHeader h3{2, 10, 20, Priority::High, 1000};
+    MessageHeader h1{1, 10, Priority::High, 1000};
+    MessageHeader h2{1, 10, Priority::High, 1000};
+    MessageHeader h3{2, 10, Priority::High, 1000};
     
     EXPECT_EQ(h1, h2);
     EXPECT_NE(h1, h3);
@@ -66,7 +65,6 @@ TEST(MessageBuilderTest, BuildEmptyMessage) {
     
     EXPECT_EQ(msg.header.id, 0u);
     EXPECT_EQ(msg.header.source, 0u);
-    EXPECT_EQ(msg.header.destination, 0u);
     EXPECT_EQ(msg.header.priority, Priority::Normal);
     EXPECT_TRUE(std::holds_alternative<std::monostate>(msg.payload));
 }
@@ -77,7 +75,6 @@ TEST(MessageBuilderTest, BuildCompleteMessage) {
     auto msg = MessageBuilder()
         .id(42)
         .from(100)
-        .to(200)
         .priority(Priority::High)
         .timestamp(9999)
         .payload(std::move(data))
@@ -85,7 +82,6 @@ TEST(MessageBuilderTest, BuildCompleteMessage) {
     
     EXPECT_EQ(msg.header.id, 42u);
     EXPECT_EQ(msg.header.source, 100u);
-    EXPECT_EQ(msg.header.destination, 200u);
     EXPECT_EQ(msg.header.priority, Priority::High);
     EXPECT_EQ(msg.header.timestamp, 9999u);
     EXPECT_EQ(msg.size(), 2u);
@@ -95,12 +91,10 @@ TEST(MessageBuilderTest, FluentInterface) {
     auto msg = MessageBuilder()
         .id(1)
         .from(2)
-        .to(3)
         .build();
     
     EXPECT_EQ(msg.header.id, 1u);
     EXPECT_EQ(msg.header.source, 2u);
-    EXPECT_EQ(msg.header.destination, 3u);
 }
 
 TEST(MessageBuilderTest, PayloadFromSpan) {

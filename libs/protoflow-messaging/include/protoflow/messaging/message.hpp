@@ -29,7 +29,6 @@ enum class Priority : uint8_t {
 struct MessageHeader {
     MessageId id{0};
     ServiceId source{0};
-    ServiceId destination{0};
     Priority priority{Priority::Normal};
     uint64_t timestamp{0};
     
@@ -130,11 +129,6 @@ public:
     
     MessageBuilder& from(ServiceId src) {
         header_.source = src;
-        return *this;
-    }
-    
-    MessageBuilder& to(ServiceId dst) {
-        header_.destination = dst;
         return *this;
     }
     

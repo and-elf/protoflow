@@ -12,20 +12,6 @@ TEST(RouterTest, DefaultConstruction) {
     EXPECT_TRUE(routes.empty());
 }
 
-TEST(RouterTest, RouteByDestination) {
-    Router router;
-    
-    auto msg = MessageBuilder()
-        .id(1)
-        .to(100)
-        .build();
-    
-    auto routes = router.route(msg);
-    
-    ASSERT_EQ(routes.size(), 1u);
-    EXPECT_EQ(routes[0], 100u);
-}
-
 TEST(RouterTest, AddDefaultRoute) {
     Router router;
     router.add_route(200);
@@ -103,24 +89,6 @@ TEST(RouterTest, ConditionalRoute) {
         .build();
     auto routes2 = router.route(normal_msg);
     EXPECT_TRUE(routes2.empty());
-}
-
-TEST(RouterTest, RoutePriority) {
-    Router router;
-    
-    // Destination in header has highest priority
-    router.add_route(999);
-    router.add_route_by_id(1, 888);
-    
-    auto msg = MessageBuilder()
-        .id(1)
-        .to(777)
-        .build();
-    
-    auto routes = router.route(msg);
-    
-    ASSERT_EQ(routes.size(), 1u);
-    EXPECT_EQ(routes[0], 777u);  // Header destination wins
 }
 
 TEST(RouterTest, IdRouteOverConditional) {
@@ -240,10 +208,4 @@ TEST(RouterTest, ComplexScenario) {
     ASSERT_EQ(r3.size(), 2u);
     EXPECT_EQ(r3[0], 4000u);
     EXPECT_EQ(r3[1], 5000u);
-    
-    // Test header destination (highest priority)
-    auto msg4 = MessageBuilder().id(42).to(9999).build();
-    auto r4 = router.route(msg4);
-    ASSERT_EQ(r4.size(), 1u);
-    EXPECT_EQ(r4[0], 9999u);
 }
