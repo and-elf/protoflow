@@ -1,0 +1,185 @@
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          Protoflow Main Application                         │
+│                         (protoflow-main-app - root)                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      │
+                          ┌───────────▼───────────┐
+                          │      main.cpp         │
+                          │  CLI Argument Parser  │
+                          │   Signal Handlers     │
+                          └───────────┬───────────┘
+                                      │
+                                      │ creates & initializes
+                                      │
+                          ┌───────────▼───────────┐
+                          │      Runtime          │
+                          │ ┌───────────────────┐ │
+                          │ │ Message Router    │ │
+                          │ │ Service Scheduler │ │
+                          │ │ (100Hz cycle)     │ │
+                          │ └───────────────────┘ │
+                          └───────────┬───────────┘
+                                      │
+                                      │ manages
+                   ┌──────────────────┼──────────────────┐
+                   │                  │                  │
+          ┌────────▼────────┐ ┌──────▼──────┐ ┌────────▼────────┐
+          │ App Registration│ │  Hardware   │ │  HTTP Service   │
+          │    Service      │ │ Arbitration │ │                 │
+          │                 │ │  Service    │ │  Port: 8080     │
+          └────────┬────────┘ └──────┬──────┘ └────────┬────────┘
+                   │                 │                  │
+                   │                 │                  │
+     ┌─────────────┴─────────────────┴──────────────────┴─────────────┐
+     │                    Message Passing Layer                       │
+     │              (Inbound/Outbound Mailboxes per Service)          │
+     └─────────────┬─────────────────┬──────────────────┬─────────────┘
+                   │                 │                  │
+                   │                 │                  │
+                   │                 │                  │
+    ┌──────────────▼──────┐  ┌──────▼──────┐   ┌───────▼───────┐
+    │ Registered Apps     │  │  Hardware   │   │   Browsers    │
+    │ (TCP/RPC)           │  │  Devices    │   │  /Clients     │
+    │                     │  │             │   │   (HTTP)      │
+    │ • Lifecycle Mgmt    │  │ /dev/ttyUSB0│   │               │
+    │ • UI Fragments      │  │ /dev/i2c-1  │   │ • Home Page   │
+    │ • State Queries     │  │ /dev/spidev │   │ • App UIs     │
+    │ • Keepalive         │  │ GPIO pins   │   │ • JSON API    │
+    └─────────────────────┘  └─────────────┘   └───────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Services Detail:
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       ApplicationRegistrationService                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Responsibilities:                                                           │
+│  • Register/unregister applications                                         │
+│  • Track keepalive heartbeats (30s timeout)                                 │
+│  • Aggregate UI fragments from registered apps                              │
+│  • Render navigation bar for HTTP service                                   │
+│  • Provide JSON state API                                                   │
+│  • Proxy RPC requests to registered apps                                    │
+│                                                                             │
+│ State:                                                                      │
+│  • Map<AppName, AppRegistration>                                            │
+│  • AppRegistration { name, version, endpoints, hw_requirements, active }    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      HardwareArbitrationService                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Responsibilities:                                                           │
+│  • Load hardware configuration from hardware.conf                           │
+│  • Manage exclusive/shared access to hardware resources                     │
+│  • Proxy all hardware I/O operations (read, write, ioctl)                   │
+│  • Enforce timeouts and access policies                                     │
+│  • Track hardware sessions                                                  │
+│                                                                             │
+│ Operations:                                                                 │
+│  • request_access(app, resource, mode, timeout) → handle                    │
+│  • release_access(handle) → ok                                              │
+│  • read(handle, max_length) → data                                          │
+│  • write(handle, data) → bytes_written                                      │
+│  • ioctl(handle, request, args) → result                                    │
+│                                                                             │
+│ State:                                                                      │
+│  • Map<ResourceName, HardwareResource>                                      │
+│  • Map<Handle, HardwareSession>                                             │
+│  • HardwareSession { handle, app_name, resource, mode, fd, timeout }        │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            HTTPService                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Responsibilities:                                                           │
+│  • Serve HTTP endpoints on configured port                                  │
+│  • Content negotiation (HTML vs JSON based on Accept header)                │
+│  • Integrate with ApplicationRegistrationService for UI                     │
+│  • Route requests to registered apps                                        │
+│                                                                             │
+│ Endpoints:                                                                  │
+│  • GET /                         → Home page with navigation                │
+│  • GET /api/state                → Aggregated JSON state                    │
+│  • GET /app/{name}/{endpoint}    → Proxy to registered app                  │
+│                                                                             │
+│ Features:                                                                   │
+│  • Dynamic endpoint registration                                            │
+│  • Wildcard route matching                                                  │
+│  • HTML page composition using protoflow-html-fragment                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Message Flow Example (Hardware Access):
+
+┌──────────┐       ┌──────────┐       ┌──────────┐       ┌──────────┐
+│Registered│       │  Runtime │       │ Hardware │       │  Device  │
+│   App    │       │          │       │   Arb.   │       │          │
+└────┬─────┘       └────┬─────┘       └────┬─────┘       └────┬─────┘
+     │                  │                  │                  │
+     │ REQUEST_ACCESS   │                  │                  │
+     ├─────────────────►│                  │                  │
+     │                  │ poll() + route   │                  │
+     │                  ├─────────────────►│                  │
+     │                  │                  │ open("/dev/...")  │
+     │                  │                  ├─────────────────►│
+     │                  │                  │      fd          │
+     │                  │                  │◄─────────────────┤
+     │                  │  ACCESS_GRANTED  │                  │
+     │                  │◄─────────────────┤                  │
+     │  ACCESS_GRANTED  │                  │                  │
+     │◄─────────────────┤                  │                  │
+     │                  │                  │                  │
+     │    HW_WRITE      │                  │                  │
+     ├─────────────────►│ poll() + route   │                  │
+     │                  ├─────────────────►│  write(fd, data) │
+     │                  │                  ├─────────────────►│
+     │                  │                  │       ok         │
+     │                  │                  │◄─────────────────┤
+     │                  │   WRITE_ACK      │                  │
+     │                  │◄─────────────────┤                  │
+     │    WRITE_ACK     │                  │                  │
+     │◄─────────────────┤                  │                  │
+     │                  │                  │                  │
+     │   HW_RELEASE     │                  │                  │
+     ├─────────────────►│ poll() + route   │                  │
+     │                  ├─────────────────►│   close(fd)      │
+     │                  │                  ├─────────────────►│
+     │                  │                  │       ok         │
+     │                  │                  │◄─────────────────┤
+     │                  │  RELEASE_ACK     │                  │
+     │                  │◄─────────────────┤                  │
+     │   RELEASE_ACK    │                  │                  │
+     │◄─────────────────┤                  │                  │
+     │                  │                  │                  │
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Deterministic Execution Cycle (100Hz = 10ms):
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Runtime Cycle (every 10ms)                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. For each service:                                                       │
+│     └─ poll()                                                               │
+│        ├─ Read ONE message from inbound mailbox                             │
+│        ├─ Process message via handle()                                      │
+│        └─ Generate ONE outbound message via generate_outbound()             │
+│                                                                             │
+│  2. Route all outbound messages:                                            │
+│     └─ For each outbound message:                                           │
+│        ├─ Determine destination(s) via Router                               │
+│        └─ Deliver to destination service's inbound mailbox                  │
+│                                                                             │
+│  3. Sleep until next cycle (if time remaining)                              │
+│                                                                             │
+│  Result: ONE message processed per service per cycle                        │
+│          → Deterministic, predictable execution                             │
+│          → Observable message flow                                          │
+│          → No race conditions                                               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘

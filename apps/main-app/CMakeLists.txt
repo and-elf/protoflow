@@ -5,11 +5,16 @@ add_executable(protoflow-main-app)
 
 target_sources(protoflow-main-app
     PRIVATE
-        # To be added
-        # src/main.cpp
-        # src/app_registration_service.cpp
-        # src/hardware_arbitration_service.cpp
-        # src/http_server.cpp
+        src/main.cpp
+        src/runtime.cpp
+        src/services/app_registration_service.cpp
+        src/services/hardware_arbitration_service.cpp
+        src/services/http_service.cpp
+)
+
+target_include_directories(protoflow-main-app
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(protoflow-main-app
@@ -20,8 +25,11 @@ target_link_libraries(protoflow-main-app
         protoflow::service
         protoflow::fsm
         protoflow::rpc
+        protoflow::hw-client
         protoflow::transport-tcp
         protoflow::html-fragment
+        protoflow::http
+        nlohmann_json::nlohmann_json
 )
 
 target_compile_features(protoflow-main-app PRIVATE cxx_std_23)

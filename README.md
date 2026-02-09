@@ -98,7 +98,40 @@ See [docs/](docs/) for detailed library documentation.
 
 ## Main Application
 
-The main application:
+**Status**: ✅ **Implemented** (see [apps/main-app/](apps/main-app/))
+
+The main application (`protoflow-main-app`):
+- Runs as **root** with exclusive hardware access
+- Listens on TCP port for app registration
+- Serves HTTP for UI aggregation (default port 8080)
+- Provides hardware arbitration service
+- Aggregates JSON state from all apps
+- Implements three core services:
+  - **ApplicationRegistrationService** - App lifecycle and UI aggregation
+  - **HardwareArbitrationService** - Hardware I/O proxy
+  - **HTTPService** - HTTP endpoints and content negotiation
+
+**Run**:
+```bash
+# Build
+cmake --build build --target protoflow-main-app
+
+# Run (requires root for hardware access)
+sudo ./build/apps/main-app/protoflow-main-app
+
+# Custom configuration
+sudo ./protoflow-main-app --port 9000 --hw-config /path/to/hardware.conf
+
+# Help
+./protoflow-main-app --help
+```
+
+**Documentation**:
+- [apps/main-app/README.md](apps/main-app/README.md) - Usage and configuration
+- [apps/main-app/IMPLEMENTATION.md](apps/main-app/IMPLEMENTATION.md) - Implementation details
+- [apps/main-app/ARCHITECTURE-DIAGRAM.txt](apps/main-app/ARCHITECTURE-DIAGRAM.txt) - Visual architecture
+
+Registered applications:
 - Runs as **root** with exclusive hardware access
 - Listens on TCP port for app registration
 - Serves HTTP for UI aggregation
