@@ -24,7 +24,7 @@ TEST(MessageHeaderTest, Equality) {
 TEST(MessageTest, DefaultConstruction) {
     Message msg;
     EXPECT_EQ(msg.header.id, 0u);
-    EXPECT_TRUE(msg.payload.empty());
+    EXPECT_TRUE(std::holds_alternative<std::monostate>(msg.payload));
     EXPECT_EQ(msg.size(), 0u);
 }
 
@@ -68,7 +68,7 @@ TEST(MessageBuilderTest, BuildEmptyMessage) {
     EXPECT_EQ(msg.header.source, 0u);
     EXPECT_EQ(msg.header.destination, 0u);
     EXPECT_EQ(msg.header.priority, Priority::Normal);
-    EXPECT_TRUE(msg.payload.empty());
+    EXPECT_TRUE(std::holds_alternative<std::monostate>(msg.payload));
 }
 
 TEST(MessageBuilderTest, BuildCompleteMessage) {

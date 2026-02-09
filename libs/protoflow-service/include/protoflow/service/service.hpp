@@ -2,8 +2,10 @@
 
 #include <optional>
 #include <vector>
+#include <sstream>
 #include "mailbox.hpp"
 #include <protoflow/messaging/message.hpp>
+#include <protoflow/logging/log_message.hpp>
 
 namespace protoflow::runtime {
 class Runtime;
@@ -63,6 +65,38 @@ protected:
         outbound.push(std::move(msg));
     }
 
+    /// Log a message at specified level
+    void log(protoflow::messaging::LogLevel level, const std::string& text) {
+        using namespace protoflow::messaging;
+        
+        auto log_msg = LogMessage{level, text};
+        auto msg = MessageBuilder{}
+            .from(service_id_)
+            .to(logging_service_id_)
+            .log(std::move(log_msg))
+            .build();
+        
+        write(std::move(msg));
+    }
+    
+    /// Convenience logging methods
+    void log_trace(const std::string& text) { log(protoflow::messaging::LogLevel::Trace, text); }
+    void log_debug(const std::string& text) { log(protoflow::messaging::LogLevel::Debug, text); }
+    void log_info(const std::string& text)  { log(protoflow::messaging::LogLevel::Info, text); }
+    void log_warn(const std::string& text)  { log(protoflow::messaging::LogLevel::Warn, text); }
+    void log_error(const std::string& text) { log(protoflow::messaging::LogLevel::Error, text); }
+    void log_fatal(const std::string& text) { log(protoflow::messaging::LogLevel::Fatal, text); }
+    
+    /// Set service ID (called by runtime during registration)
+    void set_service_id(protoflow::messaging::ServiceId id) {
+        service_id_ = id;
+    }
+    
+    /// Set logging service ID (called by runtime)
+    void set_logging_service_id(protoflow::messaging::ServiceId id) {
+        logging_service_id_ = id;
+    }
+
     /// Override to handle incoming messages
     virtual void handle(Message&& msg) = 0;
 
@@ -75,6 +109,8 @@ protected:
 private:
     Mailbox<Message> inbound;
     Mailbox<Message> outbound;
+    protoflow::messaging::ServiceId service_id_{0};
+    protoflow::messaging::ServiceId logging_service_id_{0};
 
     friend class protoflow::runtime::Runtime; // Runtime needs access to outbound queue
 };

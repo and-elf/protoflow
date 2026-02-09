@@ -1,18 +1,20 @@
 # protoflow-logging library
-# Policy-injected logging infrastructure
+# Logging infrastructure integrated with service messaging
 
 protoflow_add_library(
     NAME logging
     VERSION ${PROJECT_VERSION}
-    DESCRIPTION "Policy-injected logging infrastructure"
+    DESCRIPTION "Logging infrastructure integrated with service messaging"
     TYPE STATIC
     
     SOURCES
-        # To be added
-        # src/logger.cpp
-        # src/sinks.cpp
-        # src/config_parser.cpp
+        src/log_message.cpp
+        src/logging_service.cpp
     
     PUBLIC_INCLUDE_DIRS
         include
+    
+    PUBLIC_LINK_LIBRARIES
+        protoflow::messaging
+        protoflow::service
 )
