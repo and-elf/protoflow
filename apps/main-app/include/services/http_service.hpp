@@ -7,9 +7,10 @@
 #include <string>
 #include <functional>
 #include <unordered_map>
+#include <map>
 #include <memory>
 #include <optional>
-#include <queue>
+#include <chrono>
 
 namespace protoflow::mainapp {
 
@@ -84,6 +85,7 @@ private:
 
     /// Context for tracking pending HTTP requests waiting for service responses
     struct PendingRequest {
+        uint64_t request_id;  // Unique ID for matching responses
         HttpRequest request;
         enum class Type { Navigation, State, Fragment, Logs } type;
         std::chrono::steady_clock::time_point timestamp;
@@ -96,9 +98,12 @@ private:
     // Endpoint registry
     std::unordered_map<std::string, HttpHandler> endpoints_;
     
-    // Pending requests waiting for service responses
-    std::queue<PendingRequest> pending_requests_;
+    // Pending requests waiting for service responses (keyed by request_id)
+    std::map<uint64_t, PendingRequest> pending_requests_;
     std::vector<HttpResponse> pending_responses_;
+    uint64_t next_request_id_ = 1;
+    
+    static constexpr auto REQUEST_TIMEOUT = std::chrono::seconds(5);
     
     // HTTP server implementation (would be actual HTTP server)
     // For now, this is a placeholder

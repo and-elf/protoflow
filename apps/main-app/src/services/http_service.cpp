@@ -51,11 +51,43 @@ void HTTPService::stop() {
 void HTTPService::poll() {
     if (!running_) return;
     
+    // Check for timed out requests
+    auto now = std::chrono::steady_clock::now();
+    std::vector<uint64_t> timed_out_ids;
+    
+    for (const auto& [req_id, pending] : pending_requests_) {
+        auto elapsed = now - pending.timestamp;
+        
+        if (elapsed >= REQUEST_TIMEOUT) {
+            timed_out_ids.push_back(req_id);
+        }
+    }
+    
+    // Remove timed out requests and send error responses
+    for (uint64_t req_id : timed_out_ids) {
+        auto it = pending_requests_.find(req_id);
+        if (it != pending_requests_.end()) {
+            auto elapsed = now - it->second.timestamp;
+            
+            PROTOFLOW_LOG_WARN(*this, "Request #" << req_id 
+                              << " timed out after " 
+                              << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() 
+                              << "ms");
+            
+            HttpResponse timeout_response;
+            timeout_response.status_code = 504;
+            timeout_response.set_json(R"({"error": "Request timed out waiting for service response"})");
+            pending_responses_.push_back(std::move(timeout_response));
+            
+            pending_requests_.erase(it);
+        }
+    }
+    
     // In a full implementation:
     // 1. Accept incoming connections
     // 2. Parse HTTP requests
     // 3. Route to appropriate handlers
-    // 4. Send HTTP responses
+    // 4. Send HTTP responses from pending_responses_
     
     // For now, this is a placeholder that would integrate with an actual HTTP server
     
@@ -177,7 +209,10 @@ HttpResponse HTTPService::serve_state_api(const HttpRequest& request) {
 void HTTPService::handle(service::Message&& msg) {
     // Handle navigation responses
     if (auto* nav_response = std::get_if<NavigationResponse>(&msg.payload)) {
-        PROTOFLOW_LOG_INFO(*this, "Received NavigationResponse");
+        PROTOFLOW_LOG_INFO(*this, "Received NavigationResponse for request #" << nav_response->request_id);
+        
+        // Remove from pending requests
+        pending_requests_.erase(nav_response->request_id);
         
         // Build HTTP response with navigation HTML
         HttpResponse response;
@@ -186,7 +221,10 @@ void HTTPService::handle(service::Message&& msg) {
     }
     // Handle state responses
     else if (auto* state_response = std::get_if<StateResponse>(&msg.payload)) {
-        PROTOFLOW_LOG_INFO(*this, "Received StateResponse");
+        PROTOFLOW_LOG_INFO(*this, "Received StateResponse for request #" << state_response->request_id);
+        
+        // Remove from pending requests
+        pending_requests_.erase(state_response->request_id);
         
         // Build HTTP response with state data
         HttpResponse response;
@@ -200,8 +238,11 @@ void HTTPService::handle(service::Message&& msg) {
     }
     // Handle fragment responses
     else if (auto* frag_response = std::get_if<FragmentResponse>(&msg.payload)) {
-        PROTOFLOW_LOG_INFO(*this, "Received FragmentResponse for " 
-                          << frag_response->app_name << frag_response->endpoint);
+        PROTOFLOW_LOG_INFO(*this, "Received FragmentResponse for request #" << frag_response->request_id
+                          << " (" << frag_response->app_name << frag_response->endpoint << ")");
+        
+        // Remove from pending requests
+        pending_requests_.erase(frag_response->request_id);
         
         HttpResponse response;
         response.status_code = frag_response->status_code;
@@ -217,9 +258,12 @@ void HTTPService::handle(service::Message&& msg) {
     }
     // Handle log responses (from LoggingService)
     else if (auto* log_response = std::get_if<logging::LogResponse>(&msg.payload)) {
-        PROTOFLOW_LOG_INFO(*this, "Received LogResponse with " 
-                          << log_response->logs.size() << " logs (total matches: " 
+        PROTOFLOW_LOG_INFO(*this, "Received LogResponse for request #" << log_response->request_id
+                          << " with " << log_response->logs.size() << " logs (total matches: " 
                           << log_response->total_matches << ")");
+        
+        // Remove from pending requests
+        pending_requests_.erase(log_response->request_id);
         
         HttpResponse response;
         

@@ -16,6 +16,7 @@ namespace protoflow::logging {
 /// Message: Request to query/filter stored logs
 struct LogRequest {
     messaging::ServiceId requester_id;                  // Service requesting the logs
+    uint64_t request_id;                                // For matching responses
     std::optional<messaging::ServiceId> service_id;     // Filter by service
     std::optional<Level> min_level;                     // Minimum log level
     std::optional<std::chrono::system_clock::time_point> start_time;  // Time range start
@@ -28,6 +29,7 @@ struct LogRequest {
 /// Message: Response containing filtered logs
 struct LogResponse {
     messaging::ServiceId requester_id;                  // Original requester
+    uint64_t request_id;                                // Matches the request
     std::vector<LogMessage> logs;                       // Filtered log messages
     size_t total_matches;                               // Total matching logs (before limit/offset)
 };
@@ -100,6 +102,7 @@ private:
     void handle_log_request(const LogRequest& request) {
         LogResponse response{
             .requester_id = request.requester_id,
+            .request_id = request.request_id,
             .logs = {},
             .total_matches = 0
         };
