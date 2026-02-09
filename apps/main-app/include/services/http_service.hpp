@@ -3,10 +3,13 @@
 #include <protoflow/service.hpp>
 #include <protoflow/http.hpp>
 #include <protoflow/html.hpp>
+#include "../messages.hpp"
 #include <string>
 #include <functional>
 #include <unordered_map>
 #include <memory>
+#include <optional>
+#include <queue>
 
 namespace protoflow::mainapp {
 
@@ -79,12 +82,23 @@ private:
     /// Check if client accepts JSON
     bool accepts_json(const HttpRequest& request) const;
 
+    /// Context for tracking pending HTTP requests waiting for service responses
+    struct PendingRequest {
+        HttpRequest request;
+        enum class Type { Navigation, State, Fragment, Logs } type;
+        std::chrono::steady_clock::time_point timestamp;
+    };
+
     std::string listen_address_;
     uint16_t port_;
     bool running_ = false;
     
     // Endpoint registry
     std::unordered_map<std::string, HttpHandler> endpoints_;
+    
+    // Pending requests waiting for service responses
+    std::queue<PendingRequest> pending_requests_;
+    std::vector<HttpResponse> pending_responses_;
     
     // HTTP server implementation (would be actual HTTP server)
     // For now, this is a placeholder

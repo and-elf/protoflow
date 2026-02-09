@@ -1,4 +1,5 @@
 #include "services/http_service.hpp"
+#include "messages.hpp"
 #include <protoflow/logging/macros.hpp>
 #include <sstream>
 
@@ -173,13 +174,33 @@ HttpResponse HTTPService::serve_state_api(const HttpRequest& request) {
     return response;
 }
 
-void HTTPService::handle(messaging::Message&& msg) {
-    // Handle incoming HTTP-related messages
+void HTTPService::handle(service::Message&& msg) {
+    // Handle navigation responses
+    if (auto* nav_response = std::get_if<NavigationResponse>(&msg.payload)) {
+        // Find corresponding pending request and build response
+        // For now, store for later processing
+    }
+    // Handle state responses
+    else if (auto* state_response = std::get_if<StateResponse>(&msg.payload)) {
+        // Process state response
+    }
+    // Handle fragment responses
+    else if (auto* frag_response = std::get_if<FragmentResponse>(&msg.payload)) {
+        // Process fragment response
+    }
+    // Handle log responses (from LoggingService)
+    else if (auto* log_response = std::get_if<logging::LogResponse>(&msg.payload)) {
+        // Process log response and build JSON/HTML
+    }
 }
 
-std::vector<messaging::Message> HTTPService::generate_outbound() {
-    // Generate HTTP responses as messages
-    return {};
+std::vector<service::Message> HTTPService::generate_outbound() {
+    std::vector<service::Message> messages;
+    
+    // In a full implementation, this would generate request messages
+    // based on incoming HTTP requests that need data from other services
+    
+    return messages;
 }
 
 bool HTTPService::accepts_html(const HttpRequest& request) const {
