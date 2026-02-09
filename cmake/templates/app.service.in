@@ -1,0 +1,31 @@
+[Unit]
+Description=Protoflow Application: @APP_DESCRIPTION@
+After=network.target protoflow-main-app.service
+Requires=protoflow-main-app.service
+
+[Service]
+Type=simple
+User=@APP_USER@
+Group=@APP_USER@
+ExecStart=@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_BINDIR@/@APP_BINARY_NAME@
+Restart=always
+RestartSec=5
+
+# Configuration
+Environment="PROTOFLOW_LOGGING_CONFIG=/etc/protoflow/@APP_NAME@/logging.ini"
+
+# Security hardening (NO hardware access)
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ReadWritePaths=/var/lib/protoflow/@APP_NAME@
+
+# No device access - all hardware via main app RPC
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -19,8 +19,6 @@ cmake-build-*/
 
 # Executables
 protoflow-*
-!apps/
-!libs/
 
 # CMake
 CMakeCache.txt

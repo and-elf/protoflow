@@ -1,0 +1,22 @@
+[Unit]
+Description=Protoflow Main Application
+After=network.target
+Before=protoflow-*.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_BINDIR@/protoflow-main-app
+Restart=always
+RestartSec=5
+
+# Main app has hardware access
+PrivateTmp=yes
+ProtectHome=yes
+
+# Hardware configuration
+Environment="PROTOFLOW_HW_CONFIG=/etc/protoflow/hardware.conf"
+
+[Install]
+WantedBy=multi-user.target
