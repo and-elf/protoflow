@@ -1,4 +1,4 @@
 # Unit tests
 
-# Placeholder for unit tests
-# Tests will be added as libraries are implemented
+# Add library test subdirectories
+add_subdirectory(libs/protoflow-messaging)

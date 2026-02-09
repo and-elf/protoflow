@@ -17,8 +17,6 @@ cmake-build-*/
 *.so.*
 *.dylib
 
-# Executables
-protoflow-*
 
 # CMake
 CMakeCache.txt
