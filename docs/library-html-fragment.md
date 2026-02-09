@@ -14,6 +14,43 @@ Compile-time HTML generation library using C++23 concepts.
 
 ## Concepts
 
+### tag
+```cpp
+template <fixed_string Name, typename... Attrs, typename... Children>
+struct tag : node {
+    std::tuple<Children...> children;
+
+    constexpr tag(Children... c) : children(std::move(c)...) {}
+
+    void render(render_ctx& ctx) const override {
+        ctx.write("<");
+        ctx.write(Name);
+
+        (write_attr<Attrs>(ctx), ...);
+
+        ctx.write(">");
+
+        std::apply([&](auto const&... c) {
+            (c.render(ctx), ...);
+        }, children);
+
+        ctx.write("</");
+        ctx.write(Name);
+        ctx.write(">");
+    }
+
+private:
+    template <typename A>
+    static void write_attr(render_ctx& ctx) {
+        ctx.write(" ");
+        ctx.write(A::key);
+        ctx.write("=\"");
+        ctx.write(A::value);
+        ctx.write("\"");
+    }
+};
+```
+
 ### html_node
 
 ```cpp
@@ -226,9 +263,10 @@ struct style_ {
 ### Attribute Pack
 
 ```cpp
-template <typename... Attrs>
-struct attrs {
-    // Empty tag for attribute grouping
+template <fixed_string Key, fixed_string Value>
+struct attr {
+    static constexpr std::string_view key = Key;
+    static constexpr std::string_view value = Value;
 };
 ```
 
