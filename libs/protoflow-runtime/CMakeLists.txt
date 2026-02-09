@@ -8,10 +8,13 @@ protoflow_add_library(
     TYPE STATIC
     
     SOURCES
-        # To be added
-        # src/runtime.cpp
-        # src/scheduler.cpp
+        src/runtime.cpp
+        src/scheduler.cpp
     
     PUBLIC_INCLUDE_DIRS
         include
+    
+    PUBLIC_LINK_LIBRARIES
+        protoflow::messaging
+        protoflow::service
 )

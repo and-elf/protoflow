@@ -1,12 +1,18 @@
 #pragma once
 
 #include <optional>
+#include <vector>
 #include "mailbox.hpp"
+#include <protoflow/messaging/message.hpp>
+
+namespace protoflow::runtime {
+class Runtime;
+}
 
 namespace protoflow::service {
 
-// Forward declarations
-class Message;
+// Use messaging::Message
+using Message = protoflow::messaging::Message;
 
 /// Base class for all protoflow services
 /// Services read from inbound queue and write to outbound queue
@@ -29,7 +35,7 @@ public:
         // Read one message from inbound queue
         // process at most one inbound message
         if (auto msg = read(); msg)
-            handle(*msg);
+            handle(std::move(*msg));
 
         // process at most one outbound message
         if (auto out = generate_outbound(); !out.empty())
@@ -39,6 +45,11 @@ public:
     /// Called by runtime when routing message to this service
     void on_message(Message&& msg) {
         inbound.push(std::move(msg));
+    }
+    
+    /// Pop outbound message for routing (used by runtime)
+    [[nodiscard]] std::optional<Message> pop_outbound() {
+        return outbound.pop();
     }
 
 protected:
@@ -65,7 +76,7 @@ private:
     Mailbox<Message> inbound;
     Mailbox<Message> outbound;
 
-    friend class Runtime; // Runtime needs access to outbound queue
+    friend class protoflow::runtime::Runtime; // Runtime needs access to outbound queue
 };
 
 } // namespace protoflow::service
