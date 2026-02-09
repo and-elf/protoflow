@@ -38,6 +38,7 @@ option(BUILD_TRANSPORT_UNIX "Build protoflow-transport-unix library" OFF)
 option(BUILD_TRANSPORT_MQTT "Build protoflow-transport-mqtt library" OFF)
 option(BUILD_HTML_FRAGMENT "Build protoflow-html-fragment library" OFF)
 option(BUILD_HTTP "Build protoflow-http library" OFF)
+option(BUILD_HW_CLIENT "Build protoflow-hw-client library" OFF)
 option(BUILD_MAIN_APP "Build main application" OFF)
 
 # Include CMake modules
@@ -105,6 +106,10 @@ if(BUILD_HTTP)
     add_subdirectory(libs/protoflow-http)
 endif()
 
+if(BUILD_HW_CLIENT)
+    add_subdirectory(libs/protoflow-hw-client)
+endif()
+
 # Applications
 if(BUILD_MAIN_APP)
     add_subdirectory(apps/main-app)
@@ -159,6 +164,7 @@ message(STATUS "  transport-tcp:         ${BUILD_TRANSPORT_TCP}")
 message(STATUS "  transport-mqtt:        ${BUILD_TRANSPORT_MQTT}")
 message(STATUS "  transport-unix:        ${BUILD_TRANSPORT_UNIX}")
 message(STATUS "  html-fragment:         ${BUILD_HTML_FRAGMENT}")
+message(STATUS "  hw-client:             ${BUILD_HW_CLIENT}")
 message(STATUS "")
 message(STATUS "Applications:")
 message(STATUS "  main-app:              ${BUILD_MAIN_APP}")
