@@ -91,6 +91,7 @@ protoflow/
 - **protoflow-rpc**: TCP-based RPC framework
 - **protoflow-transport-tcp**: TCP transport adapter
 - **protoflow-transport-mqtt**: MQTT transport adapter
+- **protoflow-transport-unix**: Unix transport adapter
 - **protoflow-html-fragment**: Compile-time HTML generation
 
 See [docs/](docs/) for detailed library documentation.
