@@ -29,6 +29,7 @@ target_link_libraries(protoflow-main-app
         protoflow::transport-tcp
         protoflow::html-fragment
         protoflow::http
+        protoflow::config
         nlohmann_json::nlohmann_json
 )
 
