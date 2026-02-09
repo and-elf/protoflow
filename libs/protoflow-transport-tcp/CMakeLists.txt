@@ -8,15 +8,8 @@ protoflow_add_library(
     TYPE STATIC
     
     SOURCES
-        # To be added
-        # src/tcp_client.cpp
-        # src/tcp_server.cpp
-        # src/tcp_adapter.cpp
+        src/tcp.cpp
     
     PUBLIC_INCLUDE_DIRS
         include
-    
-    PUBLIC_LINK_LIBRARIES
-        protoflow::runtime
-        protoflow::messaging
 )
