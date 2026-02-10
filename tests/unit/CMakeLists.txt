@@ -1,6 +1,7 @@
 # Unit tests
 
 # Add library test subdirectories
+add_subdirectory(libs/protoflow-app-registration-client)
 add_subdirectory(libs/protoflow-fsm)
 add_subdirectory(libs/protoflow-html-fragment)
 add_subdirectory(libs/protoflow-http)
