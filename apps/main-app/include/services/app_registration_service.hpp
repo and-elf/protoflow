@@ -1,8 +1,6 @@
 #pragma once
 
 #include <protoflow/service.hpp>
-#include <protoflow/rpc.hpp>
-#include <protoflow/html.hpp>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -23,7 +21,7 @@ struct AppRegistration {
 };
 
 /// Service managing registered applications
-/// Handles app lifecycle, UI aggregation, and state API
+/// Handles app lifecycle and state tracking via messaging
 class AppRegistrationService : public service::Service {
 public:
     AppRegistrationService();
@@ -48,17 +46,8 @@ public:
     /// Get specific app by name
     [[nodiscard]] std::optional<AppRegistration> get_app(const std::string& name) const;
 
-    /// Render navigation bar HTML fragment
-    [[nodiscard]] html::node_ptr render_navigation() const;
-
     /// Aggregate state from all registered apps as JSON
     [[nodiscard]] std::string aggregate_state_json() const;
-
-    /// Proxy HTML fragment request to registered app
-    [[nodiscard]] std::optional<html::node_ptr> proxy_fragment_request(
-        const std::string& app_name,
-        const std::string& endpoint
-    ) const;
 
 protected:
     void handle(messaging::Message&& msg) override;
@@ -67,13 +56,6 @@ protected:
 private:
     /// Check for stale connections (no keepalive)
     void check_keepalives();
-
-    /// Send RPC request to app
-    std::optional<std::vector<std::byte>> send_rpc_request(
-        const std::string& app_name,
-        const rpc::protocol::rpc_header& header,
-        std::span<const std::byte> payload
-    ) const;
 
     std::unordered_map<std::string, AppRegistration> registered_apps_;
     std::chrono::seconds keepalive_timeout_{30};

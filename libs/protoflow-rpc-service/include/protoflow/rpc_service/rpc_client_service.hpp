@@ -8,12 +8,12 @@
 
 namespace protoflow::rpc_service {
 
-/// RPC Service - manages multiple RPC connections
+/// RPC Client Service - manages multiple outbound RPC connections
 /// Handles all network I/O via message passing
-class RpcService : public service::Service {
+class RpcClientService : public service::Service {
 public:
-    RpcService();
-    ~RpcService() override;
+    RpcClientService();
+    ~RpcClientService() override;
     
     // Service lifecycle
     void start() override;

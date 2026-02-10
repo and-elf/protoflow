@@ -101,30 +101,6 @@ std::optional<AppRegistration> AppRegistrationService::get_app(const std::string
     return std::nullopt;
 }
 
-html::node_ptr AppRegistrationService::render_navigation() const {
-    using namespace html;
-    
-    // Build navigation bar with links to all registered apps
-    std::vector<node_ptr> nav_items;
-    nav_items.push_back(li(a(text("Home"), attr("href", "/"))));
-    
-    for (const auto& [name, reg] : registered_apps_) {
-        if (!reg.active) continue;
-        
-        for (const auto& endpoint : reg.endpoints) {
-            nav_items.push_back(
-                li(a(text(name + ": " + endpoint), 
-                     attr("href", "/app/" + name + endpoint)))
-            );
-        }
-    }
-    
-    return nav(
-        attr("class", "navbar"),
-        ul(std::move(nav_items))
-    );
-}
-
 std::string AppRegistrationService::aggregate_state_json() const {
     json result;
     result["timestamp"] = std::chrono::system_clock::now().time_since_epoch().count();
@@ -145,29 +121,6 @@ std::string AppRegistrationService::aggregate_state_json() const {
     }
     
     return result.dump(2);
-}
-
-std::optional<html::node_ptr> AppRegistrationService::proxy_fragment_request(
-    const std::string& app_name,
-    const std::string& endpoint
-) const {
-    auto it = registered_apps_.find(app_name);
-    if (it == registered_apps_.end() || !it->second.active) {
-        return std::nullopt;
-    }
-    
-    // In a full implementation, this would:
-    // 1. Create RPC request for HTML fragment
-    // 2. Send to app via TCP transport
-    // 3. Parse response and construct HTML fragment
-    
-    // For now, return a placeholder
-    using namespace html;
-    return div(
-        h2(text("Fragment from " + app_name)),
-        p(text("Endpoint: " + endpoint)),
-        p(text("(Fragment rendering not yet implemented)"))
-    );
 }
 
 void AppRegistrationService::handle(messaging::Message&& msg) {
@@ -206,20 +159,6 @@ void AppRegistrationService::check_keepalives() {
             reg.active = false;
         }
     }
-}
-
-std::optional<std::vector<std::byte>> AppRegistrationService::send_rpc_request(
-    const std::string& app_name,
-    const rpc::protocol::rpc_header& header,
-    std::span<const std::byte> payload
-) const {
-    // In a full implementation:
-    // 1. Look up app's TCP connection
-    // 2. Send RPC request
-    // 3. Wait for response (with timeout)
-    // 4. Return response payload
-    
-    return std::nullopt;
 }
 
 } // namespace protoflow::mainapp

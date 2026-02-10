@@ -85,6 +85,10 @@ private:
     /// Check if client accepts JSON
     bool accepts_json(const HttpRequest& request) const;
 
+    /// Message handlers
+    void handle_app_registration(const AppRegistrationEvent& event);
+    void handle_app_unregistration(const AppUnregistrationEvent& event);
+
     /// Context for tracking pending HTTP requests waiting for service responses
     struct PendingRequest {
         uint64_t request_id;  // Unique ID for matching responses
@@ -99,6 +103,9 @@ private:
     
     // Endpoint registry
     std::unordered_map<std::string, HttpHandler> endpoints_;
+    
+    // Track dynamically registered apps and their endpoints for cleanup
+    std::unordered_map<std::string, std::vector<std::string>> registered_apps_;
     
     // Pending requests waiting for service responses (keyed by request_id)
     std::map<uint64_t, PendingRequest> pending_requests_;

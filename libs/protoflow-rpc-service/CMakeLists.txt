@@ -3,11 +3,11 @@ cmake_minimum_required(VERSION 3.25)
 protoflow_add_library(
     NAME rpc-service
     VERSION ${PROJECT_VERSION}
-    DESCRIPTION "RPC service for managing network connections via messaging"
-    TYPE INTERFACE
+    DESCRIPTION "RPC client service for managing outbound network connections via messaging"
     
-    # SOURCES
-    #     src/rpc_service.cpp  # Disabled - has compilation errors
+    SOURCES
+        src/messages.cpp
+        src/rpc_client_service.cpp
     
     PUBLIC_INCLUDE_DIRS
         include

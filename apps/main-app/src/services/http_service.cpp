@@ -207,98 +207,35 @@ HttpResponse HTTPService::serve_state_api(const HttpRequest& request) {
 }
 
 void HTTPService::handle(service::Message&& msg) {
-    // Handle navigation responses
-    if (auto* nav_response = std::get_if<NavigationResponse>(&msg.payload)) {
-        PROTOFLOW_LOG_INFO(*this, "Received NavigationResponse for request #" << nav_response->request_id);
-        
-        // Remove from pending requests
-        pending_requests_.erase(nav_response->request_id);
-        
-        // Build HTTP response with navigation HTML
-        HttpResponse response;
-        response.set_html(nav_response->html_fragment);
-        pending_responses_.push_back(std::move(response));
-    }
-    // Handle state responses
-    else if (auto* state_response = std::get_if<StateResponse>(&msg.payload)) {
-        PROTOFLOW_LOG_INFO(*this, "Received StateResponse for request #" << state_response->request_id);
-        
-        // Remove from pending requests
-        pending_requests_.erase(state_response->request_id);
-        
-        // Build HTTP response with state data
-        HttpResponse response;
-        // Content is already formatted as JSON or HTML
-        if (state_response->content.starts_with("{") || state_response->content.starts_with("[")) {
-            response.set_json(state_response->content);
-        } else {
-            response.set_html(state_response->content);
-        }
-        pending_responses_.push_back(std::move(response));
-    }
-    // Handle fragment responses
-    else if (auto* frag_response = std::get_if<FragmentResponse>(&msg.payload)) {
-        PROTOFLOW_LOG_INFO(*this, "Received FragmentResponse for request #" << frag_response->request_id
-                          << " (" << frag_response->app_name << frag_response->endpoint << ")");
-        
-        // Remove from pending requests
-        pending_requests_.erase(frag_response->request_id);
-        
-        HttpResponse response;
-        response.status_code = frag_response->status_code;
-        
-        if (frag_response->html_fragment) {
-            // Fragment is already complete HTML, use it directly
-            response.set_html(*frag_response->html_fragment);
-        } else {
-            response.set_html("<html><body><h1>404 Not Found</h1><p>App or endpoint not found</p></body></html>");
+    PROTOFLOW_LOG_DEBUG(*this, "Received message: type=" << msg.type() 
+                      << ", size=" << msg.size() << " bytes");
+    
+    // Dispatch based on MessageType by casting raw bytes
+    switch (msg.type()) {
+        case MessageTypes::AppRegistrationEvent: {
+            if (auto event = AppRegistrationEvent::deserialize(msg.bytes())) {
+                handle_app_registration(*event);
+            } else {
+                PROTOFLOW_LOG_ERROR(*this, "Failed to deserialize AppRegistrationEvent");
+            }
+            break;
         }
         
-        pending_responses_.push_back(std::move(response));
-    }
-    // Handle log responses (from LoggingService)
-    else if (auto* log_response = std::get_if<logging::LogResponse>(&msg.payload)) {
-        PROTOFLOW_LOG_INFO(*this, "Received LogResponse for request #" << log_response->request_id
-                          << " with " << log_response->logs.size() << " logs (total matches: " 
-                          << log_response->total_matches << ")");
-        
-        // Remove from pending requests
-        pending_requests_.erase(log_response->request_id);
-        
-        HttpResponse response;
-        
-        // Build JSON response with log data
-        std::ostringstream json;
-        json << "{\n";
-        json << "  \"total\": " << log_response->total_matches << ",\n";
-        json << "  \"count\": " << log_response->logs.size() << ",\n";
-        json << "  \"logs\": [\n";
-        
-        for (size_t i = 0; i < log_response->logs.size(); ++i) {
-            const auto& log = log_response->logs[i];
-            
-            // Convert timestamp to ISO 8601 string
-            auto time_t = std::chrono::system_clock::to_time_t(log.timestamp);
-            std::tm tm_buf{};
-            gmtime_r(&time_t, &tm_buf);
-            char timestamp_buf[64];
-            std::strftime(timestamp_buf, sizeof(timestamp_buf), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
-            
-            json << "    {\n";
-            json << "      \"timestamp\": \"" << timestamp_buf << "\",\n";
-            json << "      \"level\": \"" << to_string(log.level) << "\",\n";
-            json << "      \"source\": " << log.source << ",\n";
-            json << "      \"message\": \"" << log.message << "\"\n";
-            json << "    }";
-            if (i < log_response->logs.size() - 1) json << ",";
-            json << "\n";
+        case MessageTypes::AppUnregistrationEvent: {
+            if (auto event = AppUnregistrationEvent::deserialize(msg.bytes())) {
+                handle_app_unregistration(*event);
+            } else {
+                PROTOFLOW_LOG_ERROR(*this, "Failed to deserialize AppUnregistrationEvent");
+            }
+            break;
         }
         
-        json << "  ]\n";
-        json << "}\n";
+        // TODO: Handle other message types (NavigationResponse, StateResponse, etc.)
+        // when their serialization is implemented
         
-        response.set_json(json.str());
-        pending_responses_.push_back(std::move(response));
+        default:
+            PROTOFLOW_LOG_WARN(*this, "Unknown message type: " << msg.type());
+            break;
     }
 }
 
@@ -307,8 +244,57 @@ std::vector<service::Message> HTTPService::generate_outbound() {
     
     // In a full implementation, this would generate request messages
     // based on incoming HTTP requests that need data from other services
+    // Messages would be serialized to bytes with appropriate MessageType
     
     return messages;
+}
+
+void HTTPService::handle_app_registration(const AppRegistrationEvent& event) {
+    PROTOFLOW_LOG_INFO(*this, "App registered: " << event.app_name 
+                      << " v" << event.version 
+                      << " with " << event.endpoints.size() << " endpoints");
+    
+    // Dynamically register endpoints for this app
+    for (const auto& endpoint : event.endpoints) {
+        std::string path = "/app/" + event.app_name + "/" + endpoint;
+        
+        PROTOFLOW_LOG_INFO(*this, "  Registering endpoint: GET " << path);
+        
+        register_endpoint("GET", path, [this, app_name = event.app_name, endpoint](const HttpRequest& req) {
+            // This handler will be called when the endpoint is requested
+            // It should send a FragmentRequest to the AppRegistrationService
+            // For now, return a placeholder
+            HttpResponse response;
+            response.status_code = 503;
+            response.set_html("<html><body><h1>Service Unavailable</h1>"
+                            "<p>Endpoint forwarding not yet implemented</p></body></html>");
+            return response;
+        });
+    }
+    
+    // Track registered apps for cleanup
+    registered_apps_[event.app_name] = event.endpoints;
+}
+
+void HTTPService::handle_app_unregistration(const AppUnregistrationEvent& event) {
+    PROTOFLOW_LOG_INFO(*this, "App unregistered: " << event.app_name);
+    
+    // Remove endpoints for this app
+    auto it = registered_apps_.find(event.app_name);
+    if (it != registered_apps_.end()) {
+        for (const auto& endpoint : it->second) {
+            std::string path = "/app/" + event.app_name + "/" + endpoint;
+            std::string key = "GET " + path;
+            
+            auto endpoint_it = endpoints_.find(key);
+            if (endpoint_it != endpoints_.end()) {
+                PROTOFLOW_LOG_INFO(*this, "  Unregistering endpoint: " << key);
+                endpoints_.erase(endpoint_it);
+            }
+        }
+        
+        registered_apps_.erase(it);
+    }
 }
 
 bool HTTPService::accepts_html(const HttpRequest& request) const {

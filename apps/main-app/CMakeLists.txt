@@ -14,6 +14,7 @@ protoflow_add_app(
         src/services/app_registration_service.cpp
         src/services/hardware_arbitration_service.cpp
         src/services/http_service.cpp
+        src/services/rpc_server_service.cpp
     
     LINK_LIBRARIES
         protoflow::runtime
@@ -22,6 +23,7 @@ protoflow_add_app(
         protoflow::service
         protoflow::fsm
         protoflow::rpc
+        protoflow::rpc-service
         protoflow::hw-client
         protoflow::transport-tcp
         protoflow::html-fragment
