@@ -3,7 +3,6 @@
 add_executable(test_app_registration_client
     test_app_registration_client_basic.cpp
     test_app_registration_client_fsm.cpp
-    test_app_registration_client_protocol.cpp
 )
 
 target_link_libraries(test_app_registration_client

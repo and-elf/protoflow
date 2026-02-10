@@ -11,9 +11,9 @@ Config make_test_config(const std::string& app_name = "test_app") {
     return Config{
         .app_name = app_name,
         .version = 1,
+        .endpoints = {"http://localhost:8080", "ws://localhost:8081"},
         .server_address = "127.0.0.1",
         .server_port = 9000,
-        .endpoints = {"http://localhost:8080", "ws://localhost:8081"},
         .heartbeat_interval = std::chrono::seconds(5),
         .connection_timeout = std::chrono::milliseconds(1000),
         .read_timeout = std::chrono::milliseconds(500),

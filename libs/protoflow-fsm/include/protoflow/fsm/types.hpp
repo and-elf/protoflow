@@ -16,12 +16,22 @@ struct OtherwiseTag {};
 // Sentinel value for otherwise transitions (no specific event)
 inline constexpr int OtherwiseEvent = -1;
 
+// Tag type for transitions without actions
+struct NoAction {
+    constexpr void operator()() const noexcept {}
+};
+
 // Transition represents a state machine transition
-template<typename FromState, auto EventValue, typename ToState, typename Action>
+// Action can be any invocable with no arguments returning void, or NoAction
+template<typename FromState, auto EventValue, typename ToState, typename Action = NoAction>
 struct Transition {
     Action action;
 
-    constexpr Transition(Action act) : action(std::move(act)) {}
+    constexpr Transition(Action act = {}) : action(std::move(act)) {}
+    
+    constexpr bool has_action() const {
+        return !std::is_same_v<Action, NoAction>;
+    }
 };
 
 // FsmBuilder accumulates transitions and tracks whether otherwise() is defined
@@ -34,7 +44,7 @@ struct FsmBuilder {
         : transitions(std::move(t)) {}
 };
 
-// Helper to create destination state selector
+// Helper to create destination state selector with action
 template<typename State, auto EventValue, typename Action>
 struct TransitionBuilder {
     Action action;
@@ -51,12 +61,38 @@ struct TransitionBuilder {
     }
 };
 
-// When clause builder
+// Helper to create destination state selector without action
+template<typename State, auto EventValue>
+struct NoActionTransitionBuilder {
+    template<auto ToStateValue>
+    constexpr auto to() const {
+        using ToState = std::integral_constant<decltype(ToStateValue), ToStateValue>;
+        using T = Transition<State, EventValue, ToState, NoAction>;
+        return FsmBuilder<NoOtherwise, T>{std::tuple{T{}}};
+    }
+
+    constexpr auto stay() const {
+        return to<State::value>();
+    }
+};
+
+// When clause builder - supports both .then().to() and direct .to()
 template<typename State, auto EventValue>
 struct When {
-    template<typename Action>
-    constexpr auto then(Action action) const {
-        return TransitionBuilder<State, EventValue, Action>{std::move(action)};
+    // With action: .then(action).to<State>()
+    template<std::invocable Callable>
+    constexpr auto then(Callable&& action) const {
+        return TransitionBuilder<State, EventValue, std::remove_cvref_t<Callable>>{std::forward<Callable>(action)};
+    }
+    
+    // Without action: .to<State>() or .stay()
+    template<auto ToStateValue>
+    constexpr auto to() const {
+        return NoActionTransitionBuilder<State, EventValue>{}.template to<ToStateValue>();
+    }
+    
+    constexpr auto stay() const {
+        return NoActionTransitionBuilder<State, EventValue>{}.stay();
     }
 };
 
@@ -67,7 +103,7 @@ constexpr auto when() {
     return When<State, EventValue>{};
 }
 
-// Otherwise clause builder
+// Otherwise clause builder - supports both .then().to() and direct .to()
 struct OtherwiseBuilder {
     template<typename Action>
     struct OtherwiseTransitionBuilder {
@@ -81,9 +117,17 @@ struct OtherwiseBuilder {
         }
     };
 
-    template<typename Action>
-    constexpr auto then(Action action) const {
-        return OtherwiseTransitionBuilder<Action>{std::move(action)};
+    template<std::invocable Callable>
+    constexpr auto then(Callable&& action) const {
+        return OtherwiseTransitionBuilder<std::remove_cvref_t<Callable>>{std::forward<Callable>(action)};
+    }
+    
+    // Without action: .to<State>()
+    template<auto ToStateValue>
+    constexpr auto to() const {
+        using ToState = std::integral_constant<decltype(ToStateValue), ToStateValue>;
+        using T = Transition<OtherwiseTag, OtherwiseEvent, ToState, NoAction>;
+        return FsmBuilder<HasOtherwise, T>{std::tuple{T{}}};
     }
 };
 

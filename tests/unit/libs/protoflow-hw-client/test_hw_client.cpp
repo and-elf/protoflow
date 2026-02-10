@@ -6,7 +6,6 @@
 #include <cstring>
 
 using namespace protoflow::hw;
-namespace rpc_proto = protoflow::rpc::protocol;
 namespace hw_proto = protoflow::hw::protocol;
 
 // Mock transport for testing
@@ -52,13 +51,13 @@ public:
     template<typename T>
     void queue_message(hw_proto::cmd command, const T& msg) {
         // Queue header first
-        auto header = rpc_proto::make_header(
-            static_cast<rpc_proto::cmd>(command),
+        auto header = protoflow::rpc::make_header(
+            static_cast<uint16_t>(command),
             sizeof(T)
         );
         
-        std::vector<std::byte> header_data(rpc_proto::rpc_header::wire_size);
-        std::memcpy(header_data.data(), &header, rpc_proto::rpc_header::wire_size);
+        std::vector<std::byte> header_data(protoflow::rpc::rpc_header::wire_size);
+        std::memcpy(header_data.data(), &header, protoflow::rpc::rpc_header::wire_size);
         receive_queue.push(std::move(header_data));
         
         // Queue payload separately
@@ -203,14 +202,14 @@ TEST(HwClientTest, ReadSuccess) {
     response.status = 0;
     response.reserved = 0;
     
-    auto header = rpc_proto::make_header(
-        static_cast<rpc_proto::cmd>(hw_proto::cmd::hw_read_response),
+    auto header = protoflow::rpc::make_header(
+        static_cast<uint16_t>(hw_proto::cmd::hw_read_response),
         hw_proto::hw_read_response_msg::wire_size + 5  // response struct + 5 bytes of data
     );
     
     // Queue header
-    std::vector<std::byte> header_data(rpc_proto::rpc_header::wire_size);
-    std::memcpy(header_data.data(), &header, rpc_proto::rpc_header::wire_size);
+    std::vector<std::byte> header_data(protoflow::rpc::rpc_header::wire_size);
+    std::memcpy(header_data.data(), &header, protoflow::rpc::rpc_header::wire_size);
     transport.queue_response(std::move(header_data));
     
     // Queue payload (response struct + data)

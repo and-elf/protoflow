@@ -143,8 +143,8 @@ public:
         msg.handle = handle.id();
         msg.flags = 0;
         
-        auto header = rpc::protocol::make_header(
-            static_cast<rpc::protocol::cmd>(protocol::cmd::hw_release),
+        auto header = rpc::make_header(
+            static_cast<uint16_t>(protocol::cmd::hw_read),
             protocol::hw_release_msg::wire_size
         );
         
@@ -253,8 +253,8 @@ public:
         msg.length = static_cast<uint32_t>(max_length);
         msg.flags = 0;
         
-        auto header = rpc::protocol::make_header(
-            static_cast<rpc::protocol::cmd>(protocol::cmd::hw_read),
+        auto header = rpc::make_header(
+            static_cast<uint16_t>(protocol::cmd::hw_read),
             protocol::hw_read_msg::wire_size
         );
         
@@ -324,8 +324,8 @@ public:
         payload.insert(payload.end(), msg_bytes, msg_bytes + protocol::hw_ioctl_msg::wire_size);
         payload.insert(payload.end(), arg.begin(), arg.end());
         
-        auto header = rpc::protocol::make_header(
-            static_cast<rpc::protocol::cmd>(protocol::cmd::hw_ioctl),
+        auto header = rpc::make_header(
+            static_cast<uint16_t>(protocol::cmd::hw_ioctl),
             static_cast<uint32_t>(payload.size())
         );
         

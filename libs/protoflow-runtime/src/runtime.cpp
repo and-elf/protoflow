@@ -167,7 +167,7 @@ std::size_t Runtime::route_pending_messages() {
             if (dest_id != destinations.back()) {
                 messaging::Message msg_copy;
                 msg_copy.header = msg.header;
-                msg_copy.payload = msg.payload; // Copy payload
+                msg_copy.data = msg.data; // Copy data
                 deliver_message(dest_id, std::move(msg_copy));
             } else {
                 // Move the original message to the last destination

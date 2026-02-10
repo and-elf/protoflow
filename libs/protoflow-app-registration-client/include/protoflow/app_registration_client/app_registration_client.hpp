@@ -4,7 +4,6 @@
 #include <protoflow/app_registration_protocol.hpp>
 #include <protoflow/service/service.hpp>
 #include <protoflow/fsm.hpp>
-#include <protoflow/rpc_service/messages.hpp>
 #include <memory>
 #include <chrono>
 #include <optional>
@@ -15,6 +14,10 @@ namespace protoflow::app_registration_client {
 using State = app_registration_protocol::State;
 using Event = app_registration_protocol::Event;
 
+// Forward declarations for FSM
+template<typename Sink> struct FsmImplT;
+struct AppRegistrationSink;
+
 /// App registration client service
 /// Connects to main app server and maintains registration via RPC protocol
 /// Handles connection lifecycle, handshake, registration, and heartbeats
@@ -22,6 +25,10 @@ class AppRegistrationClient : public service::Service {
 public:
     /// Construct with configuration
     explicit AppRegistrationClient(Config config);
+    
+    /// For testing: factory to create client with custom FSM sink
+    template<typename Sink>
+    static std::unique_ptr<AppRegistrationClient> create_with_sink(Config config, Sink sink);
     
     /// Destructor
     ~AppRegistrationClient() override;
@@ -62,6 +69,12 @@ protected:
 private:
     // Forward declaration for FSM implementation
     struct FsmImpl;
+    template<typename Sink> friend struct FsmImplT;
+    friend struct AppRegistrationSink;
+    
+    // Internal constructor for testing with custom sink
+    template<typename Sink>
+    AppRegistrationClient(Config config, Sink sink, int /*tag*/);
     
     // Configuration
     Config config_;
@@ -71,10 +84,6 @@ private:
     
     // FSM for state management (PIMPL)
     std::unique_ptr<FsmImpl> fsm_;
-    
-    // RPC connection ID (managed by RpcService)
-    rpc_service::ConnectionId connection_id_;
-    bool connection_requested_ = false;
     
     // Timing
     std::chrono::steady_clock::time_point last_heartbeat_;
@@ -94,32 +103,39 @@ private:
     void on_shutdown();
     
     // RPC protocol handlers
-    void send_hello();
-    void send_registration();
-    void send_heartbeat();
     void handle_hello_ack(std::span<const std::byte> payload);
     void handle_register_ack(std::span<const std::byte> payload);
     void handle_heartbeat_ack(std::span<const std::byte> payload);
     
-    // RPC service message handlers
-    void handle_rpc_connected(const rpc_service::RpcConnected& msg);
-    void handle_rpc_connection_failed(const rpc_service::RpcConnectionFailed& msg);
-    void handle_rpc_received(const rpc_service::RpcReceived& msg);
-    void handle_rpc_disconnected(const rpc_service::RpcDisconnected& msg);
-    
     // Connection management
-    void request_connection();
-    void send_rpc_data(std::vector<std::byte> data);
-    void disconnect_connection();
     void process_incoming_data(std::span<const std::byte> data);
     
     // FSM
     void create_fsm();
+    template<typename Sink>
+    void create_fsm_with_sink(Sink sink);
     void process_event(Event event);
     
     // Timing checks
     void check_heartbeat_timer();
     void check_connection_timeout();
 };
+
+// Template implementation for testing
+template<typename Sink>
+std::unique_ptr<AppRegistrationClient> AppRegistrationClient::create_with_sink(Config config, Sink sink) {
+    auto client = std::unique_ptr<AppRegistrationClient>(new AppRegistrationClient(std::move(config), std::move(sink), 0));
+    return client;
+}
+
+template<typename Sink>
+AppRegistrationClient::AppRegistrationClient(Config config, Sink sink, int /*tag*/)
+    : Service()
+    , config_(std::move(config))
+    , state_(State::Disconnected)
+    , reconnect_count_(0)
+{
+    create_fsm_with_sink(std::move(sink));
+}
 
 } // namespace protoflow::app_registration_client

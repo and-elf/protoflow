@@ -6,37 +6,25 @@
 #include <string>
 #include <tuple>
 #include <utility>
+#include <iostream>
 
 namespace protoflow::fsm::sinks {
 
-// Logging sink - emits FSM events to a logging system
-// Note: This is a placeholder that outputs to a simple interface
-// In a real system, this would integrate with protoflow-logging
+// Null sink - does nothing (for production)
+struct NullSink {
+    void emit(const FsmEvent&) const noexcept {}
+};
+
+// Logging sink - emits FSM events to logging output (for debugging/testing)
 struct LoggingSink {
-    enum class LogLevel {
-        Debug,
-        Info,
-        Warn,
-        Error
-    };
-
     std::string fsm_name;
-    LogLevel min_level = LogLevel::Warn;
-
-    // Placeholder log function - in real implementation would use protoflow-logging
-    void log(LogLevel level, const FsmEvent& e) const {
-        // In real implementation, this would call protoflow::logging::log()
-        // For now, this is a placeholder that can be replaced later
-        (void)level;
-        (void)e;
-    }
 
     void emit(const FsmEvent& e) const {
-        if (e.kind == FsmEvent::Kind::Otherwise) {
-            log(LogLevel::Error, e);
-        } else {
-            log(LogLevel::Debug, e);
-        }
+        std::string kind = e.kind == FsmEvent::Kind::Otherwise ? "INVALID" : "TRANSITION";
+        std::cout << "[FSM:" << e.fsm_name << "] " 
+                  << kind << ": " 
+                  << e.from_state << " --[" << e.event << "]--> " << e.to_state 
+                  << std::endl;
     }
 };
 

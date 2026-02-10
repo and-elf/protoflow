@@ -19,6 +19,7 @@ target_include_directories(protoflow-config
 target_link_libraries(protoflow-config
     PUBLIC
         protoflow::messaging  # For LogLevel enum
+        protoflow::logging    # For log_message.hpp
 )
 
 target_compile_features(protoflow-config PUBLIC cxx_std_23)
