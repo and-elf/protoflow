@@ -1,24 +1,21 @@
 # Main application
 # Runs as root, provides hardware arbitration and app registration
 
-add_executable(protoflow-main-app)
-
-target_sources(protoflow-main-app
-    PRIVATE
+protoflow_add_app(
+    NAME main-app
+    VERSION ${PROJECT_VERSION}
+    DESCRIPTION "Protoflow main daemon - hardware arbitration and app registration"
+    USER root
+    MAINTAINER "Protoflow Project <protoflow@example.com>"
+    
+    SOURCES
         src/main.cpp
         src/runtime.cpp
         src/services/app_registration_service.cpp
         src/services/hardware_arbitration_service.cpp
         src/services/http_service.cpp
-)
-
-target_include_directories(protoflow-main-app
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(protoflow-main-app
-    PRIVATE
+    
+    LINK_LIBRARIES
         protoflow::runtime
         protoflow::messaging
         protoflow::logging
@@ -33,11 +30,10 @@ target_link_libraries(protoflow-main-app
         nlohmann_json::nlohmann_json
 )
 
-target_compile_features(protoflow-main-app PRIVATE cxx_std_23)
-
-# Install
-install(TARGETS protoflow-main-app
-    RUNTIME DESTINATION bin
+# Include directory for private headers
+target_include_directories(protoflow-main-app
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 # Install config files
