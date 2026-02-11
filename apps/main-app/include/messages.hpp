@@ -1,8 +1,7 @@
 #pragma once
 
-#include <protoflow/messaging/types.hpp>
+#include <protoflow/messaging/message.hpp>
 #include <protoflow/app_registration_protocol/messages.hpp>
-#include <protoflow/html/element.hpp>
 #include <string>
 #include <optional>
 #include <vector>
