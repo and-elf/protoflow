@@ -8,7 +8,10 @@ add_executable(test_rpc
 
 target_link_libraries(test_rpc
     PRIVATE
-        protoflow::rpc
+        protoflow::rpc-protocol
+        protoflow::rpc-client
+        protoflow::rpc-server
+        protoflow::rpc  # For rpc_base.hpp and rpc_app.hpp
         GTest::gtest
         GTest::gtest_main
 )

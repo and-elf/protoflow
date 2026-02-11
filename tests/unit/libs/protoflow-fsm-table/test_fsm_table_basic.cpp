@@ -23,37 +23,16 @@ enum class TrafficLightEvent {
 
 class TrafficLightController {
 public:
-    // This is the key pattern: static constexpr auto for the FSM table
-    // No complex decltype(...) needed - clean and simple!
-    static constexpr auto state_table = 
-        table<TrafficLightState, TrafficLightEvent>(
-            state<TrafficLightState::red>(
-                on<TrafficLightEvent::timer_expired> = to<TrafficLightState::green>(&TrafficLightController::on_go_green),
-                on<TrafficLightEvent::emergency_override> = to<TrafficLightState::red>(&TrafficLightController::on_stay_red),
-                on<TrafficLightEvent::reset> = to<TrafficLightState::red>(&TrafficLightController::on_stay_red)
-            ),
-            state<TrafficLightState::yellow>(
-                on<TrafficLightEvent::timer_expired> = to<TrafficLightState::red>(&TrafficLightController::on_go_red),
-                on<TrafficLightEvent::emergency_override> = to<TrafficLightState::red>(&TrafficLightController::on_go_red),
-                on<TrafficLightEvent::reset> = to<TrafficLightState::red>(&TrafficLightController::on_go_red)
-            ),
-            state<TrafficLightState::green>(
-                on<TrafficLightEvent::timer_expired> = to<TrafficLightState::yellow>(&TrafficLightController::on_go_yellow),
-                on<TrafficLightEvent::emergency_override> = to<TrafficLightState::red>(&TrafficLightController::on_emergency),
-                on<TrafficLightEvent::reset> = to<TrafficLightState::red>(&TrafficLightController::on_emergency)
-            )
-        );
-
     TrafficLightController() 
-        : fsm_{TrafficLightState::red, this, sink_, state_table}
+        : fsm_{TrafficLightState::red, *this, sink_, state_table}
     {}
 
     void process(TrafficLightEvent event) {
-        fsm_.process(event);
+        fsm_.dispatch(event);
     }
 
     TrafficLightState current_state() const {
-        return fsm_.state();
+        return fsm_.current_state();
     }
 
     const std::vector<std::string>& get_log() const {
@@ -83,12 +62,34 @@ private:
 
     struct Sink {
         void on_transition(TrafficLightState, TrafficLightEvent, TrafficLightState) {}
-        void on_reject(TrafficLightState, TrafficLightEvent) {}
+        void on_invalid(TrafficLightState, TrafficLightEvent) {}
     };
 
     Sink sink_;
     std::vector<std::string> log_;
-    machine<TrafficLightState, TrafficLightEvent, TrafficLightController, Sink> fsm_;
+    
+    // This is the key pattern: static constexpr auto for the FSM table
+    // No complex decltype(...) needed - clean and simple!
+    static constexpr auto state_table = 
+        table<TrafficLightState, TrafficLightEvent>(
+            state<TrafficLightState::red>(
+                on<TrafficLightEvent::timer_expired> = to<TrafficLightState::green>(&TrafficLightController::on_go_green),
+                on<TrafficLightEvent::emergency_override> = to<TrafficLightState::red>(&TrafficLightController::on_stay_red),
+                on<TrafficLightEvent::reset> = to<TrafficLightState::red>(&TrafficLightController::on_stay_red)
+            ),
+            state<TrafficLightState::yellow>(
+                on<TrafficLightEvent::timer_expired> = to<TrafficLightState::red>(&TrafficLightController::on_go_red),
+                on<TrafficLightEvent::emergency_override> = to<TrafficLightState::red>(&TrafficLightController::on_go_red),
+                on<TrafficLightEvent::reset> = to<TrafficLightState::red>(&TrafficLightController::on_go_red)
+            ),
+            state<TrafficLightState::green>(
+                on<TrafficLightEvent::timer_expired> = to<TrafficLightState::yellow>(&TrafficLightController::on_go_yellow),
+                on<TrafficLightEvent::emergency_override> = to<TrafficLightState::red>(&TrafficLightController::on_emergency),
+                on<TrafficLightEvent::reset> = to<TrafficLightState::red>(&TrafficLightController::on_emergency)
+            )
+        );
+    
+    machine<TrafficLightState, TrafficLightEvent, TrafficLightController, Sink, decltype(state_table)> fsm_;
 };
 
 // Example: Protocol handler with explicit reject transitions
@@ -110,41 +111,16 @@ enum class ProtocolEvent {
 
 class ProtocolHandler {
 public:
-    // Another clean example: FSM table as static constexpr auto member
-    static constexpr auto state_table = 
-        table<ProtocolState, ProtocolEvent>(
-            state<ProtocolState::idle>(
-                on<ProtocolEvent::connect> = to<ProtocolState::authenticating>(&ProtocolHandler::start_auth),
-                on<ProtocolEvent::disconnect> = reject,
-                on<ProtocolEvent::data_received> = reject
-            ),
-            state<ProtocolState::authenticating>(
-                on<ProtocolEvent::auth_success> = to<ProtocolState::connected>(&ProtocolHandler::establish_connection),
-                on<ProtocolEvent::auth_failure> = to<ProtocolState::error>(&ProtocolHandler::handle_auth_error),
-                on<ProtocolEvent::timeout> = to<ProtocolState::idle>(&ProtocolHandler::timeout_reset),
-                on<ProtocolEvent::disconnect> = to<ProtocolState::idle>(&ProtocolHandler::cleanup)
-            ),
-            state<ProtocolState::connected>(
-                on<ProtocolEvent::data_received> = to<ProtocolState::connected>(&ProtocolHandler::process_data),
-                on<ProtocolEvent::disconnect> = to<ProtocolState::idle>(&ProtocolHandler::cleanup),
-                on<ProtocolEvent::timeout> = to<ProtocolState::error>(&ProtocolHandler::handle_timeout)
-            ),
-            state<ProtocolState::error>(
-                on<ProtocolEvent::disconnect> = to<ProtocolState::idle>(&ProtocolHandler::cleanup),
-                on<ProtocolEvent::timeout> = to<ProtocolState::idle>(&ProtocolHandler::timeout_reset)
-            )
-        );
-
     ProtocolHandler() 
-        : fsm_{ProtocolState::idle, this, sink_, state_table}
+        : fsm_{ProtocolState::idle, *this, sink_, state_table}
     {}
 
     void process(ProtocolEvent event) {
-        fsm_.process(event);
+        fsm_.dispatch(event);
     }
 
     ProtocolState current_state() const {
-        return fsm_.state();
+        return fsm_.current_state();
     }
 
     int get_data_count() const {
@@ -189,7 +165,7 @@ private:
         
         void on_transition(ProtocolState, ProtocolEvent, ProtocolState) {}
         
-        void on_reject(ProtocolState, ProtocolEvent) {
+        void on_invalid(ProtocolState, ProtocolEvent) {
             handler_->reject_count_++;
         }
 
@@ -199,7 +175,33 @@ private:
     Sink sink_{this};
     int data_count_ = 0;
     int reject_count_ = 0;
-    machine<ProtocolState, ProtocolEvent, ProtocolHandler, Sink> fsm_;
+    
+    // Another clean example: FSM table as static constexpr auto member
+    static constexpr auto state_table = 
+        table<ProtocolState, ProtocolEvent>(
+            state<ProtocolState::idle>(
+                on<ProtocolEvent::connect> = to<ProtocolState::authenticating>(&ProtocolHandler::start_auth),
+                on<ProtocolEvent::disconnect> = reject,
+                on<ProtocolEvent::data_received> = reject
+            ),
+            state<ProtocolState::authenticating>(
+                on<ProtocolEvent::auth_success> = to<ProtocolState::connected>(&ProtocolHandler::establish_connection),
+                on<ProtocolEvent::auth_failure> = to<ProtocolState::error>(&ProtocolHandler::handle_auth_error),
+                on<ProtocolEvent::timeout> = to<ProtocolState::idle>(&ProtocolHandler::timeout_reset),
+                on<ProtocolEvent::disconnect> = to<ProtocolState::idle>(&ProtocolHandler::cleanup)
+            ),
+            state<ProtocolState::connected>(
+                on<ProtocolEvent::data_received> = to<ProtocolState::connected>(&ProtocolHandler::process_data),
+                on<ProtocolEvent::disconnect> = to<ProtocolState::idle>(&ProtocolHandler::cleanup),
+                on<ProtocolEvent::timeout> = to<ProtocolState::error>(&ProtocolHandler::handle_timeout)
+            ),
+            state<ProtocolState::error>(
+                on<ProtocolEvent::disconnect> = to<ProtocolState::idle>(&ProtocolHandler::cleanup),
+                on<ProtocolEvent::timeout> = to<ProtocolState::idle>(&ProtocolHandler::timeout_reset)
+            )
+        );
+    
+    machine<ProtocolState, ProtocolEvent, ProtocolHandler, Sink, decltype(state_table)> fsm_;
 };
 
 } // namespace

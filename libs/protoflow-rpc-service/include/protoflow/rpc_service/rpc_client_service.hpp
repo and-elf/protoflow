@@ -2,7 +2,7 @@
 
 #include "messages.hpp"
 #include <protoflow/service/service.hpp>
-#include <protoflow/rpc/rpc_base.hpp>
+#include <protoflow/rpc/protocol.hpp>
 #include <memory>
 #include <unordered_map>
 #include <functional>
@@ -13,15 +13,10 @@ namespace protoflow::rpc_service {
 /// Handles all network I/O via message passing
 class RpcClientService : public service::Service {
 public:
-    /// Factory function type for creating transport instances
-    /// Takes connection request and returns configured transport
-    using TransportFactory = std::function<std::unique_ptr<rpc::transport_interface>(const RpcConnectRequest&)>;
-    
-    /// Constructor with dependency injection
-    /// @param transport_factory Factory to create transport instances for outbound connections
-    explicit RpcClientService(TransportFactory transport_factory);
+    /// Constructor
+    explicit RpcClientService(std::unique_ptr<protoflow::rpc::transport_interface> transport);
     ~RpcClientService() override;
-    
+
     // Service lifecycle
     void start() override;
     void stop() override;
@@ -31,24 +26,18 @@ protected:
     void handle(service::Message&& msg) override;
     std::vector<service::Message> generate_outbound() override;
 
-private:
-    struct Connection {
-        ConnectionId id;
-        std::unique_ptr<rpc::transport_interface> transport;
-        std::vector<std::vector<std::byte>> pending_sends;
-    };
-    
-    void handle_connect_request(const RpcConnectRequest& req);
+    // Only one connection/transport
+    std::unique_ptr<protoflow::rpc::transport_interface> transport_;
+    std::vector<std::vector<std::byte>> pending_sends_;
+    bool connected_ = false;
+    ConnectionId connection_id_ = 1;
+    std::vector<service::Message> outbound_;
+
     void handle_send_request(const RpcSendRequest& req);
     void handle_disconnect_request(const RpcDisconnectRequest& req);
-    
-    void poll_connection(Connection& conn);
-    void try_send_pending(Connection& conn);
-    void try_receive(Connection& conn);
-    
-    TransportFactory transport_factory_;
-    std::unordered_map<ConnectionId, std::unique_ptr<Connection>> connections_;
-    std::vector<service::Message> outbound_;
+    void poll_connection();
+    void try_send_pending();
+    void try_receive();
 };
 
 } // namespace protoflow::rpc_service

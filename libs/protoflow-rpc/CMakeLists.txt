@@ -1,5 +1,5 @@
 # protoflow-rpc library
-# RPC framework for inter-app communication
+# RPC framework for inter-app communication (facade library)
 
 protoflow_add_library(
     NAME rpc
@@ -9,4 +9,9 @@ protoflow_add_library(
     
     PUBLIC_INCLUDE_DIRS
         include
+        
+    PUBLIC_LINK_LIBRARIES
+        protoflow::rpc-protocol
+        protoflow::rpc-client
+        protoflow::rpc-server
 )

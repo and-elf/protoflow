@@ -97,6 +97,9 @@ if(BUILD_FSM_TABLE)
 endif()
 
 if(BUILD_RPC)
+    add_subdirectory(libs/protoflow-rpc-protocol)
+    add_subdirectory(libs/protoflow-rpc-client)
+    add_subdirectory(libs/protoflow-rpc-server)
     add_subdirectory(libs/protoflow-rpc)
 endif()
 

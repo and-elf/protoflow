@@ -1,7 +1,7 @@
 #pragma once
 
 #include <protoflow/service.hpp>
-#include <protoflow/rpc/rpc_base.hpp>
+#include <protoflow/rpc/protocol.hpp>
 #include <protoflow/rpc_service/messages.hpp>
 #include <memory>
 #include <unordered_map>
@@ -17,20 +17,9 @@ using ConnectionId = rpc_service::ConnectionId;
 /// NOTE: Only ONE instance should exist per system/installation
 class RpcServerService : public service::Service {
 public:
-    /// Factory function type for creating client transport instances
-    /// Used when accepting new connections
-    using ClientTransportFactory = std::function<std::unique_ptr<rpc::transport_interface>()>;
-    
-    /// Factory function type for creating server transport instance
-    using ServerTransportFactory = std::function<std::unique_ptr<rpc::transport_interface>()>;
-    
     /// Constructor with dependency injection
-    /// @param server_transport Factory to create the server transport
-    /// @param client_transport_factory Factory to create client transports for accepted connections
-    explicit RpcServerService(
-        ServerTransportFactory server_transport,
-        ClientTransportFactory client_transport_factory
-    );
+    /// @param server_transport Server transport for accepting connections
+    explicit RpcServerService(std::unique_ptr<rpc::transport_interface> server_transport);
     ~RpcServerService() override;
     
     // Service lifecycle
@@ -42,7 +31,7 @@ protected:
     void handle(service::Message&& msg) override;
     std::vector<service::Message> generate_outbound() override;
 
-private:
+public:
     struct ClientConnection {
         ConnectionId id;
         std::unique_ptr<rpc::transport_interface> transport;
@@ -50,15 +39,14 @@ private:
     };
     
     void accept_new_connections();
-    void poll_client(ClientConnection& client);
-    void try_send_pending(ClientConnection& client);
-    void try_receive(ClientConnection& client);
+    void poll_client(ClientConnection* client);
+    void try_send_pending(ClientConnection* client);
+    void try_receive(ClientConnection* client);
     
     void handle_server_send_request(const rpc_service::RpcSendRequest& req);
     void handle_server_disconnect_request(const rpc_service::RpcDisconnectRequest& req);
     
     std::unique_ptr<rpc::transport_interface> server_transport_;
-    ClientTransportFactory client_transport_factory_;
     bool listening_{false};
     ConnectionId next_connection_id_{1};
     

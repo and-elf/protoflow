@@ -13,6 +13,7 @@ namespace protoflow::mainapp {
 /// Main application runtime
 /// Manages services, routes messages, and schedules execution
 class Runtime {
+
 public:
     struct Config {
         std::string listen_address = "0.0.0.0";
@@ -22,6 +23,9 @@ public:
         bool enable_http = true;
         bool enable_registration = true;
         bool enable_hardware_arbitration = true;
+
+        // Optional: Pre-constructed RPC transport (server)
+        std::unique_ptr<protoflow::rpc::transport_interface> rpc_server_transport;
     };
 
     explicit Runtime(const Config& config);

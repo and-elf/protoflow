@@ -3,7 +3,6 @@
 #include <cstring>
 
 using namespace protoflow::rpc;
-using namespace protoflow::rpc::protocol;
 
 class ProtocolTest : public ::testing::Test {};
 
