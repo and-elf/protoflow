@@ -13,7 +13,4 @@ protoflow_add_library(
     PUBLIC_LINK_LIBRARIES
         protoflow::rpc
 )
-    ${CMAKE_CURRENT_BINARY_DIR}/protoflow-hw-clientConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/protoflow-hw-clientConfigVersion.cmake
-    DESTINATION lib/cmake/protoflow-hw-client
-)
+

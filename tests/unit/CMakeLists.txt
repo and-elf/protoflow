@@ -6,6 +6,11 @@ if(BUILD_APP_REGISTRATION_CLIENT)
 endif()
 
 add_subdirectory(libs/protoflow-fsm)
+
+if(BUILD_FSM_TABLE)
+    add_subdirectory(libs/protoflow-fsm-table)
+endif()
+
 add_subdirectory(libs/protoflow-html-fragment)
 add_subdirectory(libs/protoflow-http)
 

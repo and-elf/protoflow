@@ -33,6 +33,7 @@ option(BUILD_LOGGING "Build protoflow-logging library" ON)
 option(BUILD_CONFIG "Build protoflow-config library" ON)
 option(BUILD_SERVICE "Build protoflow-service library" ON)
 option(BUILD_FSM "Build protoflow-fsm library" ON)
+option(BUILD_FSM_TABLE "Build protoflow-fsm-table library" ON)
 option(BUILD_RPC "Build protoflow-rpc library" ON)
 option(BUILD_RPC_SERVICE "Build protoflow-rpc-service library" ON)
 option(BUILD_TRANSPORT_TCP "Build protoflow-transport-tcp library" ON)
@@ -88,6 +89,10 @@ endif()
 
 if(BUILD_FSM)
     add_subdirectory(libs/protoflow-fsm)
+endif()
+
+if(BUILD_FSM_TABLE)
+    add_subdirectory(libs/protoflow-fsm-table)
 endif()
 
 if(BUILD_RPC)
