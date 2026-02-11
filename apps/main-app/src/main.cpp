@@ -1,139 +1,81 @@
+
 #include "runtime.hpp"
 #include <iostream>
-#include <cstring>
-#include <getopt.h>
+#include <CLI/CLI.hpp>
+#include <protoflow/config_parser.hpp>
+#include <protoflow/create_transport.hpp>
 
-void print_usage(const char* program_name) {
-    std::cout << "Usage: " << program_name << " [OPTIONS]\n\n"
-              << "Protoflow Main Application - Hardware arbitration and app registration\n\n"
-              << "Options:\n"
-              << "  -h, --help                   Show this help message\n"
-              << "  -v, --version                Show version information\n"
-              << "  -a, --address ADDRESS        Listen address (default: 0.0.0.0)\n"
-              << "  -p, --port PORT              Listen port (default: 8080)\n"
-              << "  -c, --hw-config PATH         Hardware config file (default: /etc/protoflow/hardware.conf)\n"
-              << "  -l, --log-config PATH        Logging config file (default: /etc/protoflow/logging.conf)\n"
-              << "  --no-http                    Disable HTTP service\n"
-              << "  --no-registration            Disable app registration service\n"
-              << "  --no-hardware                Disable hardware arbitration service\n"
-              << "\n"
-              << "Examples:\n"
-              << "  " << program_name << " -p 9000\n"
-              << "  " << program_name << " --address 127.0.0.1 --port 8080\n"
-              << "  " << program_name << " --hw-config /path/to/hardware.conf\n"
-              << "\n";
-}
+constexpr const char* VERSION_STRING = "Protoflow Main Application v1.0.0\nBuilt with C++23\nCopyright (c) 2026 Protoflow Project\n";
 
-void print_version() {
-    std::cout << "Protoflow Main Application v1.0.0\n"
-              << "Built with C++23\n"
-              << "Copyright (c) 2026 Protoflow Project\n";
-}
+
 
 int main(int argc, char* argv[]) {
     protoflow::mainapp::Runtime::Config config;
 
-    // Command line options
-    static struct option long_options[] = {
-        {"help",           no_argument,       nullptr, 'h'},
-        {"version",        no_argument,       nullptr, 'v'},
-        {"address",        required_argument, nullptr, 'a'},
-        {"port",           required_argument, nullptr, 'p'},
-        {"hw-config",      required_argument, nullptr, 'c'},
-        {"log-config",     required_argument, nullptr, 'l'},
-        {"no-http",        no_argument,       nullptr, 1},
-        {"no-registration",no_argument,       nullptr, 2},
-        {"no-hardware",    no_argument,       nullptr, 3},
-        {nullptr, 0, nullptr, 0}
-    };
+    CLI::App app{"Protoflow Main Application - Hardware arbitration and app registration"};
 
-    int opt;
-    int option_index = 0;
+    std::string listen_address = "0.0.0.0";
+    uint16_t listen_port = 8080;
+    std::string hw_config = config.hardware_config_path;
+    std::string log_config = config.log_config_path;
+    
+    std::string rpc_server_transport = "tcp";
+    std::string rpc_server_address = "0.0.0.0";
+    uint16_t rpc_tcp_port = 9123;
 
-    while ((opt = getopt_long(argc, argv, "hva:p:c:l:", long_options, &option_index)) != -1) {
-        switch (opt) {
-            case 'h':
-                print_usage(argv[0]);
-                return 0;
-            
-            case 'v':
-                print_version();
-                return 0;
-            
-            case 'a':
-                config.listen_address = optarg;
-                break;
-            
-            case 'p':
-                try {
-                    config.listen_port = static_cast<uint16_t>(std::stoi(optarg));
-                } catch (const std::exception& e) {
-                    std::cerr << "Error: Invalid port number: " << optarg << "\n";
-                    return 1;
-                }
-                break;
-            
-            case 'c':
-                config.hardware_config_path = optarg;
-                break;
-            
-            case 'l':
-                config.log_config_path = optarg;
-                break;
-            
-            case 1:  // --no-http
-                config.enable_http = false;
-                break;
-            
-            case 2:  // --no-registration
-                config.enable_registration = false;
-                break;
-            
-            case 3:  // --no-hardware
-                config.enable_hardware_arbitration = false;
-                break;
-            
-            default:
-                print_usage(argv[0]);
-                return 1;
-        }
+    bool show_version = false;
+    app.add_flag("-v,--version", show_version, "Show version information");
+
+    std::string main_config_path;
+    app.add_option("--config", main_config_path, "Path to main configuration INI file");
+
+    app.add_option("-a,--address", listen_address, "Listen address (default: 0.0.0.0)");
+    app.add_option("-p,--port", listen_port, "Listen port (default: 8080)");
+    app.add_option("-c,--hw-config", hw_config, "Hardware config file (default: /etc/protoflow/hardware.conf)");
+    app.add_option("-l,--log-config", log_config, "Logging config file (default: /etc/protoflow/logging.conf)");
+    bool disable_http = false;
+    bool disable_registration = false;
+    bool disable_hardware = false;
+    app.add_flag("--no-http", disable_http, "Disable HTTP service");
+    app.add_flag("--no-registration", disable_registration, "Disable app registration service");
+    app.add_flag("--no-hardware", disable_hardware, "Disable hardware arbitration service");
+
+    app.add_option("--rpc-server-transport", rpc_server_transport, "RPC server transport type (tcp, unix)");
+    app.add_option("--rpc-server-address", rpc_server_address, "RPC server listen address (for TCP) or socket path (for Unix)");
+    app.add_option("--rpc-server-port", rpc_tcp_port, "RPC server TCP port (default: 9123)");
+
+    CLI11_PARSE(app, argc, argv);
+
+    // If CLI provided a config path, parse and apply (CLI options override file values)
+    if (!main_config_path.empty()) {
+        auto file_config = protoflow::mainapp::get_config(main_config_path);
+        // Use values from file as base
+        config = std::move(file_config);
     }
 
-    // Check for extra arguments
-    if (optind < argc) {
-        std::cerr << "Error: Unexpected argument: " << argv[optind] << "\n";
-        print_usage(argv[0]);
-        return 1;
+    config.listen_address = listen_address;
+    config.listen_port = listen_port;
+    config.hardware_config_path = hw_config;
+    config.log_config_path = log_config;
+    config.enable_http = !disable_http;
+    config.enable_registration = !disable_registration;
+    config.enable_hardware_arbitration = !disable_hardware;
+
+
+    if (show_version) {
+        std::cout << VERSION_STRING;
+        return 0;
     }
 
-    // Print startup banner
-    std::cout << "\n";
-    std::cout << "╔═══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Protoflow Main Application                              ║\n";
-    std::cout << "║  Hardware Arbitration & App Registration                 ║\n";
-    std::cout << "╚═══════════════════════════════════════════════════════════╝\n";
-    std::cout << "\n";
-
-    // Print configuration
-    std::cout << "Configuration:\n";
-    std::cout << "  Listen Address:      " << config.listen_address << "\n";
-    std::cout << "  Listen Port:         " << config.listen_port << "\n";
-    std::cout << "  Hardware Config:     " << config.hardware_config_path << "\n";
-    std::cout << "  Logging Config:      " << config.log_config_path << "\n";
-    std::cout << "  HTTP Service:        " << (config.enable_http ? "enabled" : "disabled") << "\n";
-    std::cout << "  Registration:        " << (config.enable_registration ? "enabled" : "disabled") << "\n";
-    std::cout << "  Hardware Arbitration:" << (config.enable_hardware_arbitration ? "enabled" : "disabled") << "\n";
-    std::cout << "\n";
-
-    // Verify we're running as root (required for hardware access)
-    if (geteuid() != 0) {
-        std::cerr << "Warning: Not running as root. Hardware access may be limited.\n";
-        std::cerr << "         For full functionality, run with sudo or as root.\n\n";
-    }
-
-    // Create and initialize runtime
+    // Leave RPC server transport to runtime to construct as needed
+    // Apply CLI overrides for transport preferences
+    config.rpc_server_transport = protoflow::mainapp::create_server_transport(
+        rpc_server_transport,
+        rpc_server_address,
+        rpc_tcp_port
+    );
     try {
-        protoflow::mainapp::Runtime runtime(config);
+        protoflow::mainapp::Runtime runtime(std::move(config));
 
         if (!runtime.initialize()) {
             std::cerr << "Error: Failed to initialize runtime\n";

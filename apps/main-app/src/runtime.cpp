@@ -2,6 +2,8 @@
 #include "services/app_registration_service.hpp"
 #include "services/hardware_arbitration_service.hpp"
 #include "services/http_service.hpp"
+#include "services/rpc_server_service.hpp"
+
 #include <protoflow/config/hardware_config.hpp>
 #include <protoflow/config/logging_config.hpp>
 #include <iostream>
@@ -22,8 +24,8 @@ namespace {
     }
 }
 
-Runtime::Runtime(const Config& config)
-    : config_(config)
+Runtime::Runtime(Config config)
+    : config_(std::move(config))
 {
     g_runtime.store(this);
     std::signal(SIGINT, signal_handler);
@@ -52,11 +54,13 @@ bool Runtime::initialize() {
     }
     
     auto logging_config = log_config.value_or(config::LoggingConfig{});
-    logger_ = std::make_unique<logging::LoggingService>();
-    logger_->set_console_output(logging_config.console_output);
-    logger_->set_min_level(logging_config.min_level);
-    logger_->set_max_stored_logs(logging_config.max_stored_logs);
-    services_.push_back(logger_.get());
+    // Create logging service and transfer ownership to services_ vector
+    auto logging_service = std::make_unique<logging::LoggingService>();
+    logging_service->set_console_output(logging_config.console_output);
+    logging_service->set_min_level(logging_config.min_level);
+    logging_service->set_max_stored_logs(logging_config.max_stored_logs);
+    logger_ = logging_service.get();
+    services_.push_back(std::move(logging_service));
 
     // Initialize message router
     std::cout << "  - Initializing message router...\n";
@@ -99,6 +103,12 @@ bool Runtime::initialize() {
         services_.push_back(std::move(http_service));
     }
 
+    // Initialize RPC server service if a transport is provided in config
+    if (config_.rpc_server_transport) {
+        auto rpc_server_service = std::make_unique<RpcServerService>(std::move(config_.rpc_server_transport));
+        std::cout << "    * RpcServerService (custom transport)\n";
+        services_.push_back(std::move(rpc_server_service));
+    }
     // Start all services
     std::cout << "  - Starting services...\n";
     for (auto& service : services_) {
@@ -160,23 +170,22 @@ void Runtime::cycle() {
 }
 
 void Runtime::route_messages() {
-    // Collect outbound messages from all services
-    for (auto* service : services_) {
-        auto outbound = service->generate_outbound();
-        
-        // Route each message to its destination
-        for (auto& msg : outbound) {
-            // Find destination service by ID
-            auto dest_it = std::ranges::find_if(services_, [&](auto* s) {
-                return s->get_id() == msg.header.destination;
-            });
-            
-            if (dest_it != services_.end()) {
-                // Deliver message to destination service
-                (*dest_it)->handle(std::move(msg));
+    // Collect outbound messages from all services and broadcast to other services
+    for (auto& service_ptr : services_) {
+        auto* service = service_ptr.get();
+
+        // Pop outbound messages until none remain
+        while (true) {
+            auto opt = service->pop_outbound();
+            if (!opt.has_value()) break;
+
+            auto msg = std::move(*opt);
+
+            // Deliver message to all other services (broadcast)
+            for (auto& dest_ptr : services_) {
+                if (dest_ptr.get() == service) continue;
+                dest_ptr->on_message(std::move(msg));
             }
-            // If destination not found, message is silently dropped
-            // (could log this in a real implementation)
         }
     }
 }

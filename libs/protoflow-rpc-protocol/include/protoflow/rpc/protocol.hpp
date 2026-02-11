@@ -7,6 +7,7 @@
 #include <vector>
 #include <expected>
 #include <string>
+#include <memory>
 
 namespace protoflow::rpc {
 
@@ -178,7 +179,9 @@ public:
     /// Check if transport is connected
     virtual bool is_connected() const = 0;
 
-    virtual std::unique_ptr<rpc::transport_interface> accept() = 0;
+    virtual std::unique_ptr<protoflow::rpc::transport_interface> accept() {
+        return nullptr;
+    }
 };
 
 } // namespace protoflow::rpc

@@ -34,6 +34,7 @@ protected:
     std::vector<service::Message> outbound_;
 
     void handle_send_request(const RpcSendRequest& req);
+    void handle_connect_request(const RpcConnectRequest& req);
     void handle_disconnect_request(const RpcDisconnectRequest& req);
     void poll_connection();
     void try_send_pending();

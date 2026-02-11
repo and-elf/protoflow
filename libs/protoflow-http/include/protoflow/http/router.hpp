@@ -13,6 +13,9 @@
 #include <vector>
 #include <regex>
 
+// Forward-declare render context from html-fragment in global scope
+namespace protoflow::html { class render_ctx; }
+
 namespace protoflow::http {
 
 // Handler function type
@@ -143,9 +146,13 @@ private:
 
 // Content negotiation helpers
 namespace detail {
+    // Forward-declare render_ctx to avoid include-order issues
+    namespace protoflow_html_forward {
+        class render_ctx;
+    }
     // Check if type has render method (is an HTML tag/node)
     template<typename T>
-    concept has_render = requires(const T& t, html::render_ctx& ctx) {
+    concept has_render = requires(const T& t, protoflow::html::render_ctx& ctx) {
         { t.render(ctx) } -> std::same_as<void>;
     };
     
@@ -162,7 +169,7 @@ namespace detail {
     // Render HTML tag to string
     template<has_render T>
     auto render_html(const T& tag) -> std::string {
-        html::render_ctx ctx;
+        protoflow::html::render_ctx ctx;
         tag.render(ctx);
         return ctx.take_result();
     }
@@ -170,7 +177,6 @@ namespace detail {
     // Render data to HTML (default simple renderer)
     template<typename T>
     auto render_data_as_html(const T& data) -> std::string {
-        using namespace html;
         
         // Create a simple data display using JSON in a pre-formatted div
         return "<div class=\"data\">" + json::to_json(data) + "</div>";

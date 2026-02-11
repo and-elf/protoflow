@@ -56,6 +56,7 @@ std::vector<service::Message> RpcClientService::generate_outbound() {
 }
 
 void RpcClientService::handle_connect_request(const RpcConnectRequest& req) {
+    (void)req;
     // This method is now a stub or can be removed. Use add_connection() instead.
     PROTOFLOW_LOG_WARN(*this, "handle_connect_request is deprecated. Use add_connection() to add new connections.");
 }
@@ -81,6 +82,7 @@ void RpcClientService::handle_send_request(const RpcSendRequest& req) {
 }
 
 void RpcClientService::handle_disconnect_request(const RpcDisconnectRequest& req) {
+    (void)req;
     PROTOFLOW_LOG_INFO(*this, "Disconnecting client");
     if (transport_) {
         transport_->close();

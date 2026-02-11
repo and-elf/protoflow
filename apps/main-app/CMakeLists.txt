@@ -1,6 +1,15 @@
 # Main application
 # Runs as root, provides hardware arbitration and app registration
 
+# Fetch CLI11 using CMake FetchContent
+include(FetchContent)
+FetchContent_Declare(
+    CLI11
+    GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+    GIT_TAG v2.4.2
+)
+FetchContent_MakeAvailable(CLI11)
+
 protoflow_add_app(
     NAME main-app
     VERSION ${PROJECT_VERSION}
@@ -26,11 +35,14 @@ protoflow_add_app(
         protoflow::rpc
         protoflow::rpc-service
         protoflow::transport-tcp
+        protoflow::transport-unix
+        protoflow::app-registration-protocol
         protoflow::html-fragment
         protoflow::http
         protoflow::hw-protocol
         protoflow::config
         nlohmann_json::nlohmann_json
+        CLI11::CLI11
 )
 
 # Include directory for private headers

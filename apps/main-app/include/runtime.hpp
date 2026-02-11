@@ -3,6 +3,8 @@
 #include <protoflow/service.hpp>
 #include <protoflow/messaging.hpp>
 #include <protoflow/logging.hpp>
+#include <protoflow/rpc/protocol.hpp>
+
 #include <memory>
 #include <vector>
 #include <string>
@@ -28,7 +30,7 @@ public:
         std::unique_ptr<protoflow::rpc::transport_interface> rpc_server_transport;
     };
 
-    explicit Runtime(const Config& config);
+    explicit Runtime(Config config);
     ~Runtime();
 
     /// Initialize runtime and all services
@@ -59,8 +61,8 @@ private:
     // Message router
     std::unique_ptr<messaging::Router> router_;
     
-    // Logging
-    std::unique_ptr<logging::LoggingService> logger_;
+    // Logging (non-owning pointer, ownership held in services_)
+    logging::LoggingService* logger_ = nullptr;
 };
 
 } // namespace protoflow::mainapp

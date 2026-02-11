@@ -257,7 +257,7 @@ void RpcServerService::handle_server_send_request(const rpc_service::RpcSendRequ
     client->pending_sends.push_back(req.data);
 
     // Try to send immediately
-    try_send_pending(*client);
+    try_send_pending(client.get());
 }
 
 void RpcServerService::handle_server_disconnect_request(const rpc_service::RpcDisconnectRequest& req) {

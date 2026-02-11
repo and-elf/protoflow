@@ -131,43 +131,37 @@ HttpResponse HTTPService::handle_request(const HttpRequest& request) {
 }
 
 HttpResponse HTTPService::serve_home(const HttpRequest& request) {
-    using namespace html;
-    
-    // TODO: Send NavigationRequest message to AppRegistrationService
-    // For now, serve a basic page
-    auto page = html_doc(
-        head(
-            title(text("Protoflow Main App")),
-            style(text(R"(
-                body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
-                .navbar { background: #333; padding: 10px; }
-                .navbar ul { list-style: none; margin: 0; padding: 0; }
-                .navbar li { display: inline; margin-right: 20px; }
-                .navbar a { color: white; text-decoration: none; }
-                .navbar a:hover { text-decoration: underline; }
-                .content { margin-top: 20px; }
-            )"))
-        ),
-        body(
-            div(
-                attr("class", "content"),
-                h1(text("Protoflow Main Application")),
-                p(text("Welcome to the Protoflow system.")),
-                h2(text("Registered Applications")),
-                div(
-                    attr("id", "apps"),
-                    text("Loading applications...")
-                )
-            )
-        )
-    );
-    
-    HttpResponse response;
-    response.set_html(render(page));
-    return response;
+    (void)request;
+        (void)request;
+
+        // Simple fallback HTML for now (replace with html-fragment usage later)
+        std::string html = R"(<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>Protoflow Main App</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+            .content { margin-top: 20px; }
+        </style>
+    </head>
+    <body>
+        <div class="content">
+            <h1>Protoflow Main Application</h1>
+            <p>Welcome to the Protoflow system.</p>
+            <h2>Registered Applications</h2>
+            <div id="apps">Loading applications...</div>
+        </div>
+    </body>
+</html>)";
+
+        HttpResponse response;
+        response.set_html(html);
+        return response;
 }
 
 HttpResponse HTTPService::serve_app_endpoint(const HttpRequest& request) {
+    (void)request;
     // Parse app name and endpoint from path
     // Format: /app/{app_name}/{endpoint}
     
@@ -190,17 +184,17 @@ HttpResponse HTTPService::serve_state_api(const HttpRequest& request) {
         // Return JSON
         response.set_json(R"({"error": "Not yet implemented - requires message-based communication"})");
     } else {
-        // Return HTML representation
-        using namespace html;
-        auto page = html_doc(
-            head(title(text("System State"))),
-            body(
-                h1(text("System State")),
-                pre(text("Not yet implemented - requires message-based communication"))
-            )
-        );
-        
-        response.set_html(render(page));
+        // Return HTML representation (simple fallback)
+        std::string html = R"(<!doctype html>
+<html>
+  <head><meta charset="utf-8"/><title>System State</title></head>
+  <body>
+    <h1>System State</h1>
+    <pre>Not yet implemented - requires message-based communication</pre>
+  </body>
+</html>)";
+
+        response.set_html(html);
     }
     
     return response;
@@ -262,6 +256,7 @@ void HTTPService::handle_app_registration(const AppRegistrationEvent& event) {
         
         register_endpoint("GET", path, [this, app_name = event.app_name, endpoint](const HttpRequest& req) {
             // This handler will be called when the endpoint is requested
+            (void)req;
             // It should send a FragmentRequest to the AppRegistrationService
             // For now, return a placeholder
             HttpResponse response;
