@@ -4,6 +4,7 @@
 #include <cstring>
 
 using namespace protoflow::rpc;
+using namespace protoflow::rpc::protocol;
 
 // Mock transport for testing
 class mock_transport : public transport_interface {

@@ -57,19 +57,22 @@ void RpcServerService::poll() {
             // Remove disconnected clients
             if (!client->transport || !client->transport->is_connected()) {
                 if (client->pending_sends.empty()) {
-                PROTOFLOW_LOG_DEBUG(*this, "Removing disconnected client " << client->id);
-                
-                // Notify about disconnection
-                auto msg = messaging::MessageBuilder{}
-                    .type(rpc_service::RpcMessageTypes::Disconnected)
-                    .payload(rpc_service::RpcDisconnected{
-                        client->id,
-                        "Client disconnected"
-                    }.serialize())
-                    .build();
-                outbound_.push_back(std::move(msg));
-                
-                it = clients_.erase(it);
+                    PROTOFLOW_LOG_DEBUG(*this, "Removing disconnected client " << client->id);
+                    
+                    // Notify about disconnection
+                    auto msg = messaging::MessageBuilder{}
+                        .type(rpc_service::RpcMessageTypes::Disconnected)
+                        .payload(rpc_service::RpcDisconnected{
+                            client->id,
+                            "Client disconnected"
+                        }.serialize())
+                        .build();
+                    outbound_.push_back(std::move(msg));
+                    
+                    it = clients_.erase(it);
+                } else {
+                    ++it;
+                }
             } else {
                 ++it;
             }

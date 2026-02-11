@@ -28,7 +28,7 @@ namespace protoflow::fsm {
 }
 
 TEST(SinkTest, NullSink) {
-    NullSink sink;
+    sinks::NullSink sink;
     
     auto fsm = make_fsm(
         "test",

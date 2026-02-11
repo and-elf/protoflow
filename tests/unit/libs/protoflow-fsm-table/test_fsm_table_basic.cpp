@@ -4,6 +4,7 @@
 #include <vector>
 
 using namespace protoflow;
+using namespace protoflow::fsm;
 
 namespace {
 

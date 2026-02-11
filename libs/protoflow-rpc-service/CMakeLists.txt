@@ -14,6 +14,7 @@ protoflow_add_library(
     
     PUBLIC_LINK_LIBRARIES
         protoflow::service
+        protoflow::rpc
         protoflow::transport-tcp
         protoflow::logging
 )

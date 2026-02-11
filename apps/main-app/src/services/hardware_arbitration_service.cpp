@@ -58,10 +58,10 @@ void HardwareArbitrationService::poll() {
     service::Service::poll();
 }
 
-std::expected<hw::hw_handle, hw::error_code> HardwareArbitrationService::request_access(
+std::expected<hw_protocol::hw_handle, hw_protocol::error_code> HardwareArbitrationService::request_access_internal(
     const std::string& app_name,
     const std::string& resource,
-    hw::access_mode mode,
+    hw_protocol::access_mode mode,
     std::chrono::seconds timeout
 ) {
     // Check if resource exists
@@ -69,14 +69,14 @@ std::expected<hw::hw_handle, hw::error_code> HardwareArbitrationService::request
     if (res_it == resources_.end()) {
         PROTOFLOW_LOG_WARN(*this, "Access denied for " << app_name 
                            << ": resource '" << resource << "' not found");
-        return std::unexpected(hw::error_code::resource_not_found);
+        return std::unexpected(hw_protocol::error_code::resource_not_found);
     }
 
     // Check if resource can be acquired
     if (!can_acquire(resource, mode)) {
         PROTOFLOW_LOG_WARN(*this, "Access denied for " << app_name 
                            << ": resource '" << resource << "' already in use");
-        return std::unexpected(hw::error_code::resource_busy);
+        return std::unexpected(hw_protocol::error_code::resource_busy);
     }
 
     // Open hardware device
@@ -98,18 +98,18 @@ std::expected<hw::hw_handle, hw::error_code> HardwareArbitrationService::request
     sessions_[session.handle] = std::move(session);
 
     PROTOFLOW_LOG_INFO(*this, "Access granted to " << app_name 
-                       << ": resource '" << resource << "' (handle " << session.handle.value << ")");
+                       << ": resource '" << resource << "' (handle " << session.handle << ")");
 
     return session.handle;
 }
 
-hw::error_code HardwareArbitrationService::release_access(hw::hw_handle handle) {
+hw_protocol::error_code HardwareArbitrationService::release_access_internal(hw_protocol::hw_handle handle) {
     auto* session = get_session(handle);
     if (!session) {
-        return hw::error_code::invalid_handle;
+        return hw_protocol::error_code::invalid_handle;
     }
 
-    PROTOFLOW_LOG_INFO(*this, "Releasing handle " << handle.value 
+    PROTOFLOW_LOG_INFO(*this, "Releasing handle " << handle 
                        << " for " << session->app_name);
 
     // Close device
@@ -120,28 +120,28 @@ hw::error_code HardwareArbitrationService::release_access(hw::hw_handle handle) 
     // Remove session
     sessions_.erase(handle);
 
-    return hw::error_code::success;
+    return hw_protocol::error_code::success;
 }
 
-std::expected<std::vector<std::byte>, hw::error_code> HardwareArbitrationService::read(
-    hw::hw_handle handle,
+std::expected<std::vector<std::byte>, hw_protocol::error_code> HardwareArbitrationService::read_internal(
+    hw_protocol::hw_handle handle,
     size_t max_length
 ) {
     auto* session = get_session(handle);
     if (!session) {
-        return std::unexpected(hw::error_code::invalid_handle);
+        return std::unexpected(hw_protocol::error_code::invalid_handle);
     }
 
     // Check capability
     auto res_it = resources_.find(session->resource);
     if (res_it == resources_.end() || 
-        !(res_it->second.capabilities & hw::capability_flags::can_read)) {
-        return std::unexpected(hw::error_code::not_readable);
+        !(res_it->second.capabilities & hw_protocol::capability_flags::can_read)) {
+        return std::unexpected(hw_protocol::error_code::invalid_operation);
     }
 
     // Enforce buffer limit
-    if (max_length > hw::max_buffer_size) {
-        max_length = hw::max_buffer_size;
+    if (max_length > hw_protocol::max_buffer_size) {
+        max_length = hw_protocol::max_buffer_size;
     }
 
     // Perform read
@@ -149,67 +149,67 @@ std::expected<std::vector<std::byte>, hw::error_code> HardwareArbitrationService
     ssize_t bytes_read = ::read(session->fd, buffer.data(), max_length);
     
     if (bytes_read < 0) {
-        return std::unexpected(hw::error_code::io_error);
+        return std::unexpected(hw_protocol::error_code::io_error);
     }
 
     buffer.resize(static_cast<size_t>(bytes_read));
     return buffer;
 }
 
-std::expected<size_t, hw::error_code> HardwareArbitrationService::write(
-    hw::hw_handle handle,
+std::expected<size_t, hw_protocol::error_code> HardwareArbitrationService::write_internal(
+    hw_protocol::hw_handle handle,
     std::span<const std::byte> data
 ) {
     auto* session = get_session(handle);
     if (!session) {
-        return std::unexpected(hw::error_code::invalid_handle);
+        return std::unexpected(hw_protocol::error_code::invalid_handle);
     }
 
     // Check capability
     auto res_it = resources_.find(session->resource);
     if (res_it == resources_.end() || 
-        !(res_it->second.capabilities & hw::capability_flags::can_write)) {
-        return std::unexpected(hw::error_code::not_writable);
+        !(res_it->second.capabilities & hw_protocol::capability_flags::can_write)) {
+        return std::unexpected(hw_protocol::error_code::invalid_operation);
     }
 
     // Enforce buffer limit
-    size_t write_size = std::min(data.size(), hw::max_buffer_size);
+    size_t write_size = std::min(data.size(), hw_protocol::max_buffer_size);
 
     // Perform write
     ssize_t bytes_written = ::write(session->fd, data.data(), write_size);
     
     if (bytes_written < 0) {
-        return std::unexpected(hw::error_code::io_error);
+        return std::unexpected(hw_protocol::error_code::io_error);
     }
 
     return static_cast<size_t>(bytes_written);
 }
 
-std::expected<hw::ioctl_result, hw::error_code> HardwareArbitrationService::ioctl(
-    hw::hw_handle handle,
+std::expected<hw_protocol::ioctl_result, hw_protocol::error_code> HardwareArbitrationService::ioctl_internal(
+    hw_protocol::hw_handle handle,
     uint32_t request,
     std::span<const std::byte> args
 ) {
     auto* session = get_session(handle);
     if (!session) {
-        return std::unexpected(hw::error_code::invalid_handle);
+        return std::unexpected(hw_protocol::error_code::invalid_handle);
     }
 
     // Check capability
     auto res_it = resources_.find(session->resource);
     if (res_it == resources_.end() || 
-        !(res_it->second.capabilities & hw::capability_flags::can_ioctl)) {
-        return std::unexpected(hw::error_code::operation_not_supported);
+        !(res_it->second.capabilities & hw_protocol::capability_flags::can_ioctl)) {
+        return std::unexpected(hw_protocol::error_code::invalid_operation);
     }
 
     // Perform ioctl (simplified - actual implementation would need proper arg handling)
     int result = ::ioctl(session->fd, request, args.data());
     
     if (result < 0) {
-        return std::unexpected(hw::error_code::io_error);
+        return std::unexpected(hw_protocol::error_code::io_error);
     }
 
-    hw::ioctl_result ioctl_result;
+    hw_protocol::ioctl_result ioctl_result;
     ioctl_result.result = static_cast<uint32_t>(result);
     // In a full implementation, we would copy output data here
     
@@ -219,17 +219,19 @@ std::expected<hw::ioctl_result, hw::error_code> HardwareArbitrationService::ioct
 void HardwareArbitrationService::handle(messaging::Message&& msg) {
     // Handle incoming hardware access messages from RPC clients
     // This would parse hardware access requests and route to appropriate methods
+    (void)msg; // TODO: Implement message handling
 }
 
 std::vector<messaging::Message> HardwareArbitrationService::generate_outbound() {
-    // Generate responses for hardware operations
-    return {};
+    auto messages = std::move(outbound_);
+    outbound_.clear();
+    return messages;
 }
 
 void HardwareArbitrationService::check_timeouts() {
     auto now = std::chrono::steady_clock::now();
     
-    std::vector<hw::hw_handle> expired;
+    std::vector<hw_protocol::hw_handle> expired;
     
     for (const auto& [handle, session] : sessions_) {
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
@@ -238,17 +240,17 @@ void HardwareArbitrationService::check_timeouts() {
         
         if (elapsed > session.timeout) {
             PROTOFLOW_LOG_WARN(*this, "Session timeout for handle " 
-                               << handle.value << " (" << session.app_name << ")");
+                               << handle << " (" << session.app_name << ")");
             expired.push_back(handle);
         }
     }
     
     for (auto handle : expired) {
-        release_access(handle);
+        (void)release_access_internal(handle);
     }
 }
 
-HardwareSession* HardwareArbitrationService::get_session(hw::hw_handle handle) {
+HardwareSession* HardwareArbitrationService::get_session(hw_protocol::hw_handle handle) {
     auto it = sessions_.find(handle);
     if (it != sessions_.end()) {
         return &it->second;
@@ -258,7 +260,7 @@ HardwareSession* HardwareArbitrationService::get_session(hw::hw_handle handle) {
 
 bool HardwareArbitrationService::can_acquire(
     const std::string& resource,
-    hw::access_mode mode
+    hw_protocol::access_mode mode
 ) const {
     auto res_it = resources_.find(resource);
     if (res_it == resources_.end()) {
@@ -274,14 +276,14 @@ bool HardwareArbitrationService::can_acquire(
     for (const auto& [handle, session] : sessions_) {
         if (session.resource == resource) {
             active_sessions++;
-            if (session.mode == hw::access_mode::exclusive) {
+            if (session.mode == hw_protocol::access_mode::exclusive) {
                 has_exclusive = true;
             }
         }
     }
 
     // Exclusive mode: no other sessions allowed
-    if (mode == hw::access_mode::exclusive) {
+    if (mode == hw_protocol::access_mode::exclusive) {
         return active_sessions == 0;
     }
 
@@ -294,12 +296,12 @@ bool HardwareArbitrationService::can_acquire(
     return active_sessions == 0;
 }
 
-std::expected<int, hw::error_code> HardwareArbitrationService::open_device(
+std::expected<int, hw_protocol::error_code> HardwareArbitrationService::open_device(
     const std::string& device,
-    hw::access_mode mode
+    hw_protocol::access_mode mode
 ) {
     int flags = O_RDWR; // Most hardware devices need read/write
-    if (mode == hw::access_mode::exclusive) {
+    if (mode == hw_protocol::access_mode::exclusive) {
         flags |= O_EXCL;
     }
 
@@ -309,14 +311,14 @@ std::expected<int, hw::error_code> HardwareArbitrationService::open_device(
                             << ": " << strerror(errno));
         
         if (errno == EBUSY) {
-            return std::unexpected(hw::error_code::resource_busy);
+            return std::unexpected(hw_protocol::error_code::resource_busy);
         } else if (errno == ENOENT) {
-            return std::unexpected(hw::error_code::resource_not_found);
+            return std::unexpected(hw_protocol::error_code::resource_not_found);
         } else if (errno == EACCES) {
-            return std::unexpected(hw::error_code::permission_denied);
+            return std::unexpected(hw_protocol::error_code::permission_denied);
         }
         
-        return std::unexpected(hw::error_code::io_error);
+        return std::unexpected(hw_protocol::error_code::io_error);
     }
 
     return fd;

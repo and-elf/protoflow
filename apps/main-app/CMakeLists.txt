@@ -25,10 +25,10 @@ protoflow_add_app(
         protoflow::fsm-table
         protoflow::rpc
         protoflow::rpc-service
-        protoflow::hw-client
         protoflow::transport-tcp
         protoflow::html-fragment
         protoflow::http
+        protoflow::hw-protocol
         protoflow::config
         nlohmann_json::nlohmann_json
 )
