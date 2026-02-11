@@ -3,21 +3,24 @@
 
 namespace protoflow::rpc_service {
 
-RpcClientService::RpcClientService() = default;
+RpcClientService::RpcClientService(TransportFactory transport_factory)
+    : transport_factory_(std::move(transport_factory))
+{
+}
 
 RpcClientService::~RpcClientService() = default;
 
 void RpcClientService::start() {
-    PROTOFLOW_LOG_INFO(*this, "RPC Service started");
+    PROTOFLOW_LOG_INFO(*this, "RPC Client Service started");
 }
 
 void RpcClientService::stop() {
-    PROTOFLOW_LOG_INFO(*this, "RPC Service stopping - closing all connections");
+    PROTOFLOW_LOG_INFO(*this, "RPC Client Service stopping - closing all connections");
     
     // Close all connections
     for (auto& [id, conn] : connections_) {
-        if (conn->connected) {
-            conn->client.disconnect();
+        if (conn->transport) {
+            conn->transport->close();
         }
     }
     connections_.clear();
@@ -31,7 +34,7 @@ void RpcClientService::poll() {
         poll_connection(*conn);
         
         // Remove disconnected connections
-        if (!conn->connected && conn->pending_sends.empty()) {
+        if ((!conn->transport || !conn->transport->is_connected()) && conn->pending_sends.empty()) {
             PROTOFLOW_LOG_DEBUG(*this, "Removing disconnected connection " << conn->id);
             it = connections_.erase(it);
         } else {
@@ -77,21 +80,10 @@ void RpcClientService::handle_connect_request(const RpcConnectRequest& req) {
     auto conn = std::make_unique<Connection>();
     conn->id = req.connection_id;
     
-    // Configure TCP client
-    transport::tcp::tcp_config config;
-    config.host = req.host;
-    config.port = req.port;
-    config.connect_timeout_ms = req.connect_timeout_ms;
-    config.read_timeout_ms = req.read_timeout_ms;
-    config.write_timeout_ms = req.write_timeout_ms;
+    // Create and connect transport from factory
+    conn->transport = transport_factory_(req);
     
-    conn->client = transport::tcp::tcp_client(config);
-    
-    // Attempt connection
-    auto result = conn->client.connect();
-    
-    if (result.has_value()) {
-        conn->connected = true;
+    if (conn->transport && conn->transport->is_connected()) {
         PROTOFLOW_LOG_INFO(*this, "Connected to " << req.host << ":" << req.port);
         
         // Send success message
@@ -104,14 +96,14 @@ void RpcClientService::handle_connect_request(const RpcConnectRequest& req) {
         connections_[req.connection_id] = std::move(conn);
     }
     else {
-        PROTOFLOW_LOG_ERROR(*this, "Connection failed: " << result.error().to_string());
+        PROTOFLOW_LOG_ERROR(*this, "Connection failed to " << req.host << ":" << req.port);
         
         // Send failure message
         auto msg = messaging::MessageBuilder{}
             .type(RpcMessageTypes::ConnectionFailed)
             .payload(RpcConnectionFailed{
                 req.connection_id, 
-                result.error().to_string()
+                "Failed to establish connection"
             }.serialize())
             .build();
         outbound_.push_back(std::move(msg));
@@ -136,7 +128,7 @@ void RpcClientService::handle_send_request(const RpcSendRequest& req) {
     
     auto& conn = it->second;
     
-    if (!conn->connected) {
+    if (!conn->transport || !conn->transport->is_connected()) {
         PROTOFLOW_LOG_WARN(*this, "Send request for disconnected connection: " << req.connection_id);
         
         auto msg = messaging::MessageBuilder{}
@@ -168,8 +160,9 @@ void RpcClientService::handle_disconnect_request(const RpcDisconnectRequest& req
     
     PROTOFLOW_LOG_INFO(*this, "Disconnecting connection " << req.connection_id);
     
-    conn->client.disconnect();
-    conn->connected = false;
+    if (conn->transport) {
+        conn->transport->close();
+    }
     
     // Send disconnected message
     auto msg = messaging::MessageBuilder{}
@@ -183,7 +176,7 @@ void RpcClientService::handle_disconnect_request(const RpcDisconnectRequest& req
 }
 
 void RpcClientService::poll_connection(Connection& conn) {
-    if (!conn.connected) {
+    if (!conn.transport || !conn.transport->is_connected()) {
         return;
     }
     
@@ -195,13 +188,13 @@ void RpcClientService::poll_connection(Connection& conn) {
 }
 
 void RpcClientService::try_send_pending(Connection& conn) {
-    while (!conn.pending_sends.empty() && conn.connected) {
+    while (!conn.pending_sends.empty() && conn.transport && conn.transport->is_connected()) {
         auto& data = conn.pending_sends.front();
         
-        auto result = conn.client.send(data);
+        bool sent = conn.transport->send(data);
         
-        if (result.has_value()) {
-            size_t bytes_sent = result.value();
+        if (sent) {
+            size_t bytes_sent = data.size();
             PROTOFLOW_LOG_DEBUG(*this, "Sent " << bytes_sent << " bytes on connection " << conn.id);
             
             // Send confirmation
@@ -215,20 +208,17 @@ void RpcClientService::try_send_pending(Connection& conn) {
             conn.pending_sends.erase(conn.pending_sends.begin());
         }
         else {
-            auto& error = result.error();
-            PROTOFLOW_LOG_ERROR(*this, "Send failed on connection " << conn.id 
-                               << ": " << error.to_string());
+            PROTOFLOW_LOG_ERROR(*this, "Send failed on connection " << conn.id);
             
             // Send error message
             auto msg = messaging::MessageBuilder{}
                 .type(RpcMessageTypes::SendFailed)
-                .payload(RpcSendFailed{conn.id, error.to_string()}.serialize())
+                .payload(RpcSendFailed{conn.id, "Send failed"}.serialize())
                 .build();
             outbound_.push_back(std::move(msg));
             
             // Disconnect on error
-            conn.client.disconnect();
-            conn.connected = false;
+            conn.transport->close();
             
             // Clear pending sends
             conn.pending_sends.clear();
@@ -238,12 +228,12 @@ void RpcClientService::try_send_pending(Connection& conn) {
 }
 
 void RpcClientService::try_receive(Connection& conn) {
-    if (!conn.connected) {
+    if (!conn.transport || !conn.transport->is_connected()) {
         return;
     }
     
     // Try to receive data (non-blocking)
-    auto result = conn.client.receive(8192);
+    auto result = conn.transport->receive(8192);
     
     if (result.has_value()) {
         auto& data = result.value();
@@ -261,32 +251,20 @@ void RpcClientService::try_receive(Connection& conn) {
         }
     }
     else {
-        auto& error = result.error();
-        
-        // Non-blocking receive may return EAGAIN/EWOULDBLOCK - this is not an error
-#if EAGAIN == EWOULDBLOCK
-        if (error.error_code == EAGAIN) {
-            return;
-        }
-#else
-        if (error.error_code == EAGAIN || error.error_code == EWOULDBLOCK) {
-            return;
-        }
-#endif
-        
+        // Error receiving - transport interface doesn't expose error codes
+        // so we just handle the error generically
         PROTOFLOW_LOG_ERROR(*this, "Receive failed on connection " << conn.id 
-                           << ": " << error.to_string());
+                           << ": " << result.error());
         
         // Send error message
         auto msg = messaging::MessageBuilder{}
             .type(RpcMessageTypes::Error)
-            .payload(RpcError{conn.id, error.to_string()}.serialize())
+            .payload(RpcError{conn.id, result.error()}.serialize())
             .build();
         outbound_.push_back(std::move(msg));
         
         // Disconnect on error
-        conn.client.disconnect();
-        conn.connected = false;
+        conn.transport->close();
     }
 }
 

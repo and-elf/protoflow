@@ -2,9 +2,10 @@
 
 #include "messages.hpp"
 #include <protoflow/service/service.hpp>
-#include <protoflow/transport/tcp.hpp>
+#include <protoflow/rpc/rpc_base.hpp>
 #include <memory>
 #include <unordered_map>
+#include <functional>
 
 namespace protoflow::rpc_service {
 
@@ -12,7 +13,13 @@ namespace protoflow::rpc_service {
 /// Handles all network I/O via message passing
 class RpcClientService : public service::Service {
 public:
-    RpcClientService();
+    /// Factory function type for creating transport instances
+    /// Takes connection request and returns configured transport
+    using TransportFactory = std::function<std::unique_ptr<rpc::transport_interface>(const RpcConnectRequest&)>;
+    
+    /// Constructor with dependency injection
+    /// @param transport_factory Factory to create transport instances for outbound connections
+    explicit RpcClientService(TransportFactory transport_factory);
     ~RpcClientService() override;
     
     // Service lifecycle
@@ -27,8 +34,7 @@ protected:
 private:
     struct Connection {
         ConnectionId id;
-        transport::tcp::tcp_client client;
-        bool connected = false;
+        std::unique_ptr<rpc::transport_interface> transport;
         std::vector<std::vector<std::byte>> pending_sends;
     };
     
@@ -40,6 +46,7 @@ private:
     void try_send_pending(Connection& conn);
     void try_receive(Connection& conn);
     
+    TransportFactory transport_factory_;
     std::unordered_map<ConnectionId, std::unique_ptr<Connection>> connections_;
     std::vector<service::Message> outbound_;
 };
