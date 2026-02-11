@@ -1,4 +1,5 @@
 #include "services/app_registration_service.hpp"
+#include "messages.hpp"
 #include <protoflow/logging/macros.hpp>
 #include <nlohmann/json.hpp>
 #include <sstream>
@@ -25,26 +26,25 @@ void AppRegistrationService::stop() {
 }
 
 void AppRegistrationService::poll() {
+    // Call base class poll for message handling
+    service::Service::poll();
     // Check for stale keepalives periodically
     check_keepalives();
 
-    // Call base class poll for message handling
-    service::Service::poll();
 }
 
 bool AppRegistrationService::register_app(AppRegistration&& registration) {
-    auto it = registered_apps_.find(registration.name);
-    
-    if (it != registered_apps_.end()) {
+    if (auto app = get_app(registration.name)) {
         // Re-registration of existing app
+        auto& reg = app->get();
         PROTOFLOW_LOG_INFO(*this, "Re-registering app: " << registration.name);
-        it->second.version = registration.version;
-        it->second.endpoints = registration.endpoints;
-        it->second.hw_requirements = registration.hw_requirements;
-        it->second.last_keepalive = std::chrono::steady_clock::now();
+        reg.version = registration.version;
+        reg.endpoints = registration.endpoints;
+        reg.hw_requirements = registration.hw_requirements;
+        reg.last_keepalive = std::chrono::steady_clock::now();
         
         // Process FSM event
-        it->second.fsm->process(AppEvent::register_app);
+        reg.fsm->process(AppEvent::register_app);
     } else {
         // New registration
         PROTOFLOW_LOG_INFO(*this, "Registering new app: " << registration.name);
@@ -82,27 +82,25 @@ bool AppRegistrationService::register_app(AppRegistration&& registration) {
 }
 
 void AppRegistrationService::unregister_app(const std::string& name) {
-    auto it = registered_apps_.find(name);
-    if (it != registered_apps_.end()) {
+    if (auto app = get_app(name)) {
         // Process disconnect event before removal
-        it->second.fsm->process(AppEvent::disconnect);
+        app->get().fsm->process(AppEvent::disconnect);
+        PROTOFLOW_LOG_INFO(*this, "Unregistering app: " << name);
+        registered_apps_.erase(name);
     }
-    
-    PROTOFLOW_LOG_INFO(*this, "Unregistering app: " << name);
-    registered_apps_.erase(name);
 }
 
 void AppRegistrationService::update_keepalive(const std::string& name) {
-    auto it = registered_apps_.find(name);
-    if (it != registered_apps_.end()) {
-        it->second.last_keepalive = std::chrono::steady_clock::now();
+    if (auto app = get_app(name)) {
+        auto& reg = app->get();
+        reg.last_keepalive = std::chrono::steady_clock::now();
         
         // Process heartbeat event
-        it->second.fsm->process(AppEvent::heartbeat);
+        reg.fsm->process(AppEvent::heartbeat);
     }
 }
 
-std::vector<const AppRegistration*> AppRegistrationService::get_registered_apps() const {
+[[nodiscard]] std::vector<const AppRegistration*> AppRegistrationService::get_registered_apps() const {
     std::vector<const AppRegistration*> apps;
     apps.reserve(registered_apps_.size());
     
@@ -113,45 +111,47 @@ std::vector<const AppRegistration*> AppRegistrationService::get_registered_apps(
     return apps;
 }
 
-std::optional<std::reference_wrapper<const AppRegistration>> AppRegistrationService::get_app(const std::string& name) const {
-    auto it = registered_apps_.find(name);
-    if (it != registered_apps_.end()) {
+[[nodiscard]] std::optional<std::reference_wrapper<const AppRegistration>> AppRegistrationService::get_app(const std::string& name) const {
+    if (auto it = registered_apps_.find(name); it != registered_apps_.end()) {
         return std::cref(it->second);
     }
     return std::nullopt;
 }
 
-std::string AppRegistrationService::aggregate_state_json() const {
-    json result;
-    result["timestamp"] = std::chrono::system_clock::now().time_since_epoch().count();
-    result["apps"] = json::array();
+[[nodiscard]] std::optional<std::reference_wrapper<AppRegistration>> AppRegistrationService::get_app(const std::string& name) {
+    if (auto it = registered_apps_.find(name); it != registered_apps_.end()) {
+        return std::ref(it->second);
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] std::string AppRegistrationService::aggregate_state_json() const {
+    json result{
+        {"timestamp", std::chrono::system_clock::now().time_since_epoch().count()},
+        {"apps", json::array()}
+    };
     
     for (const auto& [name, reg] : registered_apps_) {
-        json app_json;
-        app_json["name"] = name;
-        app_json["version"] = reg.version;
+        const auto state_to_string = [](AppState state) -> std::string_view {
+            switch (state) {
+                case AppState::unregistered: return "unregistered";
+                case AppState::registered: return "registered";
+                case AppState::alive: return "alive";
+                case AppState::dead: return "dead";
+            }
+            return "unknown";
+        };
         
-        // Map FSM state to status string
-        switch (reg.fsm->state()) {
-            case AppState::unregistered:
-                app_json["status"] = "unregistered";
-                break;
-            case AppState::registered:
-                app_json["status"] = "registered";
-                break;
-            case AppState::alive:
-                app_json["status"] = "alive";
-                break;
-            case AppState::dead:
-                app_json["status"] = "dead";
-                break;
-        }
-        
-        app_json["endpoints"] = reg.endpoints;
+        json app_json{
+            {"name", name},
+            {"version", reg.version},
+            {"status", state_to_string(reg.fsm->state())},
+            {"endpoints", reg.endpoints},
+            {"state", json::object()}
+        };
         
         // In a full implementation, we would RPC to each app to get their state
         // For now, just include registration metadata
-        app_json["state"] = json::object();
         
         result["apps"].push_back(std::move(app_json));
     }
@@ -160,23 +160,38 @@ std::string AppRegistrationService::aggregate_state_json() const {
 }
 
 void AppRegistrationService::handle(messaging::Message&& msg) {
-    // TODO: Implement message handling based on message type
-    // Will handle:
-    // - Registration requests
-    // - Keepalive messages
-    // - State query requests
-    (void)msg; // Suppress unused warning for now
+    switch (msg.type()) {
+        case MessageTypes::AppRegistrationEvent: {
+            if (auto event = AppRegistrationEvent::deserialize(msg.bytes())) {
+                AppRegistration registration;
+                registration.name = std::move(event->app_name);
+                registration.version = std::move(event->version);
+                registration.endpoints = std::move(event->endpoints);
+                register_app(std::move(registration));
+            }
+            break;
+        }
+        
+        case MessageTypes::AppUnregistrationEvent: {
+            if (auto event = AppUnregistrationEvent::deserialize(msg.bytes())) {
+                unregister_app(event->app_name);
+            }
+            break;
+        }
+        
+        default:
+            // Unknown message type, ignore
+            break;
+    }
 }
 
 std::vector<messaging::Message> AppRegistrationService::generate_outbound() {
-    // TODO: Generate outbound messages:
-    // - Registration acknowledgments
-    // - State aggregation results
+    // No outbound messages generated - using direct method calls instead
     return {};
 }
 
 void AppRegistrationService::check_keepalives() {
-    auto now = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
     
     for (auto& [name, reg] : registered_apps_) {
         // Only check apps that are alive
@@ -184,7 +199,7 @@ void AppRegistrationService::check_keepalives() {
             continue;
         }
         
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
             now - reg.last_keepalive
         );
         

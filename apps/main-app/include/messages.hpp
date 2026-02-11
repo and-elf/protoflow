@@ -6,6 +6,7 @@
 #include <optional>
 #include <vector>
 #include <cstring>
+#include <span>
 
 namespace protoflow::mainapp {
 
@@ -85,7 +86,7 @@ struct AppUnregistrationEvent {
     
     std::vector<std::byte> serialize() const {
         std::vector<std::byte> data;
-        uint32_t name_len = app_name.size();
+        auto name_len = static_cast<uint32_t>(app_name.size());
         data.resize(4 + name_len);
         std::memcpy(data.data(), &name_len, 4);
         std::memcpy(data.data() + 4, app_name.data(), name_len);
@@ -106,16 +107,4 @@ struct AppUnregistrationEvent {
     }
 };
 
-/// Message: Notify services when an app is registered
-struct AppRegistrationEvent {
-    std::string app_name;
-    std::string version;
-    std::vector<std::string> endpoints;  // App-specific endpoints
-};
-
-/// Message: Notify services when an app is unregistered
-struct AppUnregistrationEvent {
-    std::string app_name;
-};
-
-} // namespace protoflow::mainapp
+} // namespace protoflow::mainapp // namespace protoflow::mainapp

@@ -101,10 +101,11 @@ protected:
         return {};
     }
 
+    protoflow::messaging::ServiceId service_id_{0};
+
 private:
     Mailbox<Message> inbound;
     Mailbox<Message> outbound;
-    protoflow::messaging::ServiceId service_id_{0};
 
     friend class protoflow::runtime::Runtime; // Runtime needs access to outbound queue
 };

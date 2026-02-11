@@ -12,9 +12,9 @@ TEST(MessageHeaderTest, DefaultConstruction) {
 }
 
 TEST(MessageHeaderTest, Equality) {
-    MessageHeader h1{1, 10, Priority::High, 1000};
-    MessageHeader h2{1, 10, Priority::High, 1000};
-    MessageHeader h3{2, 10, Priority::High, 1000};
+    MessageHeader h1{1, 10, MessageTypes::Payload, Priority::High, 1000};
+    MessageHeader h2{1, 10, MessageTypes::Payload, Priority::High, 1000};
+    MessageHeader h3{2, 10, MessageTypes::Payload, Priority::High, 1000};
     
     EXPECT_EQ(h1, h2);
     EXPECT_NE(h1, h3);
@@ -23,23 +23,22 @@ TEST(MessageHeaderTest, Equality) {
 TEST(MessageTest, DefaultConstruction) {
     Message msg;
     EXPECT_EQ(msg.header.id, 0u);
-    EXPECT_TRUE(std::holds_alternative<std::monostate>(msg.payload));
     EXPECT_EQ(msg.size(), 0u);
 }
 
 TEST(MessageTest, ConstructionWithData) {
-    MessageHeader header{1, 10, 20, Priority::Normal, 1000};
+    MessageHeader header{1, 10, MessageTypes::Payload, Priority::Normal, 1000};
     std::vector<std::byte> data{std::byte{1}, std::byte{2}, std::byte{3}};
     
     Message msg{header, std::move(data)};
     
     EXPECT_EQ(msg.header, header);
     EXPECT_EQ(msg.size(), 3u);
-    EXPECT_EQ(msg.data().size(), 3u);
+    EXPECT_EQ(msg.bytes().size(), 3u);
 }
 
 TEST(MessageTest, MoveSemantics) {
-    MessageHeader header{1, 10, 20, Priority::Normal, 1000};
+    MessageHeader header{1, 10, MessageTypes::Payload, Priority::Normal, 1000};
     std::vector<std::byte> data{std::byte{1}, std::byte{2}, std::byte{3}};
     
     Message msg1{header, std::move(data)};
@@ -53,7 +52,7 @@ TEST(MessageTest, DataSpan) {
     std::vector<std::byte> data{std::byte{0xAA}, std::byte{0xBB}, std::byte{0xCC}};
     Message msg{MessageHeader{}, std::vector(data)};
     
-    auto span = msg.data();
+    auto span = msg.bytes();
     EXPECT_EQ(span.size(), 3u);
     EXPECT_EQ(span[0], std::byte{0xAA});
     EXPECT_EQ(span[1], std::byte{0xBB});
@@ -66,7 +65,7 @@ TEST(MessageBuilderTest, BuildEmptyMessage) {
     EXPECT_EQ(msg.header.id, 0u);
     EXPECT_EQ(msg.header.source, 0u);
     EXPECT_EQ(msg.header.priority, Priority::Normal);
-    EXPECT_TRUE(std::holds_alternative<std::monostate>(msg.payload));
+    EXPECT_EQ(msg.size(), 0u);
 }
 
 TEST(MessageBuilderTest, BuildCompleteMessage) {
@@ -106,9 +105,9 @@ TEST(MessageBuilderTest, PayloadFromSpan) {
         .build();
     
     EXPECT_EQ(msg.size(), 3u);
-    EXPECT_EQ(msg.data()[0], std::byte{0x11});
-    EXPECT_EQ(msg.data()[1], std::byte{0x22});
-    EXPECT_EQ(msg.data()[2], std::byte{0x33});
+    EXPECT_EQ(msg.bytes()[0], std::byte{0x11});
+    EXPECT_EQ(msg.bytes()[1], std::byte{0x22});
+    EXPECT_EQ(msg.bytes()[2], std::byte{0x33});
 }
 
 TEST(MessageBuilderTest, OverwriteValues) {

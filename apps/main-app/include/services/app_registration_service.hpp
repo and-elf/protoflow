@@ -49,8 +49,6 @@ public:
     void start() override;
     void stop() override;
     void poll() override;
-    /// Get all registered apps (returns pointers to avoid copy)
-    [[nodiscard]] std::vector<const AppRegistration*> get_registered_apps() const;
     
     /// Get specific app by name (returns optional reference to avoid copy)
     [[nodiscard]] std::optional<std::reference_wrapper<const AppRegistration>> get_app(const std::string& name) const;
@@ -60,6 +58,8 @@ protected:
     std::vector<messaging::Message> generate_outbound() override;
     
 private:
+    /// Get all registered apps (returns pointers to avoid copy)
+    [[nodiscard]] std::vector<const AppRegistration*> get_registered_apps() const;
     /// Register a new application (takes ownership via move)
     bool register_app(AppRegistration&& registration);
 
@@ -69,6 +69,8 @@ private:
     /// Update keepalive timestamp for an app
     void update_keepalive(const std::string& name);
 
+    /// Get specific app by name (mutable version for internal use)
+    [[nodiscard]] std::optional<std::reference_wrapper<AppRegistration>> get_app(const std::string& name);
 
     /// Aggregate state from all registered apps as JSON
     [[nodiscard]] std::string aggregate_state_json() const;

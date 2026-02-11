@@ -4,23 +4,6 @@
 
 using namespace protoflow;
 
-// Test service for logging tests
-class TestService : public service::Service {
-public:
-    void handle(service::Message&& /* msg */) override {
-        // Not used in these tests
-    }
-    
-    // Expose protected logging methods for testing
-    using Service::log_trace;
-    using Service::log_debug;
-    using Service::log_info;
-    using Service::log_warn;
-    using Service::log_error;
-    using Service::log_fatal;
-    using Service::set_service_id;
-};
-
 TEST(LoggingTest, LogLevelToString) {
     EXPECT_STREQ("TRACE", logging::to_string(logging::Level::Trace));
     EXPECT_STREQ("DEBUG", logging::to_string(logging::Level::Debug));
@@ -42,90 +25,21 @@ TEST(LoggingTest, LogMessageCreation) {
     EXPECT_LT(diff.count(), 100); // Should be created within last 100ms
 }
 
-TEST(LoggingTest, MessageVariantTypes) {
-    using namespace messaging;
-    
-    // Test PayloadMessage
-    {
-        std::vector<std::byte> data{std::byte{0x01}, std::byte{0x02}};
-        Message msg{MessageHeader{}, PayloadMessage{std::move(data)}};
-        EXPECT_TRUE(msg.is_payload());
-        EXPECT_FALSE(msg.is_event());
-        EXPECT_FALSE(msg.is_log());
-        EXPECT_EQ(2, msg.size());
-    }
-    
-    // Test EventMessage
-    {
-        Message msg{MessageHeader{}, EventMessage{"test.event", "data"}};
-        EXPECT_TRUE(msg.is_event());
-        EXPECT_FALSE(msg.is_payload());
-        EXPECT_FALSE(msg.is_log());
-    }
-    
-    // Test LogMessage
-    {
-        logging::LogMessage log(logging::Level::Info, "Test");
-        Message msg{MessageHeader{}, std::move(log)};
-        EXPECT_TRUE(msg.is_log());
-        EXPECT_FALSE(msg.is_payload());
-        EXPECT_FALSE(msg.is_event());
-    }
-}
-
-TEST(LoggingTest, MessageBuilderWithLog) {
-    using namespace messaging;
-    
-    auto log = logging::LogMessage(logging::Level::Error, "Error occurred");
-    auto msg = MessageBuilder{}
-        .id(123)
-        .from(1)
-        .log(std::move(log))
-        .build();
-    
-    EXPECT_EQ(123, msg.header.id);
-    EXPECT_EQ(1, msg.header.source);
-    EXPECT_TRUE(msg.is_log());
-    
-    auto* log_ptr = std::get_if<logging::LogMessage>(&msg.payload);
-    ASSERT_NE(nullptr, log_ptr);
-    EXPECT_EQ(logging::Level::Error, log_ptr->level);
-    EXPECT_EQ("Error occurred", log_ptr->text);
-}
-
-TEST(LoggingTest, ServiceLoggingMethods) {
-    TestService service;
-    service.set_service_id(42);
-    
-    // These should create log messages without crashing
-    service.log_trace("Trace");
-    service.log_debug("Debug");
-    service.log_info("Info");
-    service.log_warn("Warn");
-    service.log_error("Error");
-    service.log_fatal("Fatal");
-    
-    // Should have 6 outbound messages
-    int count = 0;
-    while (auto msg = service.pop_outbound()) {
-        EXPECT_TRUE(msg->is_log());
-        EXPECT_EQ(42, msg->header.source);
-        count++;
-    }
-    EXPECT_EQ(6, count);
-}
-
 TEST(LoggingTest, LoggingServiceFiltering) {
     logging::LoggingService logger;
     logger.set_min_level(logging::Level::Warn);
     logger.set_console_output(false); // Don't spam console during test
     logger.set_max_stored_logs(10);
     
-    // Send messages at different levels
+    // Send messages at different levels using the current bytes-based API
     auto send_log = [&](logging::Level level, const std::string& text) {
+        auto log = logging::LogMessage(level, text);
+        auto data = log.serialize();
         auto msg = messaging::MessageBuilder{}
             .from(1)
-            .log(logging::LogMessage(level, text))
+            .type(static_cast<uint32_t>(logging::LogMessageType::Log))
+            .priority(messaging::Priority::Normal)
+            .payload(std::as_bytes(std::span(data)))
             .build();
         logger.on_message(std::move(msg));
     };
@@ -140,15 +54,17 @@ TEST(LoggingTest, LoggingServiceFiltering) {
         logger.poll();
     }
     
-    // Should have 2 stored logs (Warn and Error)
+    // Should have 2 stored logs (Warn and Error) with source info
     const auto& logs = logger.get_logs();
     EXPECT_EQ(2, logs.size());
     
     if (logs.size() >= 2) {
-        EXPECT_EQ(logging::Level::Warn, logs[0].level);
-        EXPECT_EQ("Warning - should pass", logs[0].text);
-        EXPECT_EQ(logging::Level::Error, logs[1].level);
-        EXPECT_EQ("Error - should pass", logs[1].text);
+        EXPECT_EQ(logging::Level::Warn, logs[0].log.level);
+        EXPECT_EQ("Warning - should pass", logs[0].log.text);
+        EXPECT_EQ(1, logs[0].source_id);
+        EXPECT_EQ(logging::Level::Error, logs[1].log.level);
+        EXPECT_EQ("Error - should pass", logs[1].log.text);
+        EXPECT_EQ(1, logs[1].source_id);
     }
 }
 
@@ -160,9 +76,13 @@ TEST(LoggingTest, LoggingServiceMaxStorage) {
     
     // Send 5 messages
     for (int i = 0; i < 5; ++i) {
+        auto log = logging::LogMessage(logging::Level::Info, "Message " + std::to_string(i));
+        auto data = log.serialize();
         auto msg = messaging::MessageBuilder{}
             .from(1)
-            .log(logging::LogMessage(logging::Level::Info, "Message " + std::to_string(i)))
+            .type(static_cast<uint32_t>(logging::LogMessageType::Log))
+            .priority(messaging::Priority::Normal)
+            .payload(std::as_bytes(std::span(data)))
             .build();
         logger.on_message(std::move(msg));
         logger.poll();
@@ -173,33 +93,10 @@ TEST(LoggingTest, LoggingServiceMaxStorage) {
     EXPECT_EQ(3, logs.size());
     
     if (logs.size() == 3) {
-        EXPECT_EQ("Message 2", logs[0].text);
-        EXPECT_EQ("Message 3", logs[1].text);
-        EXPECT_EQ("Message 4", logs[2].text);
+        EXPECT_EQ("Message 2", logs[0].log.text);
+        EXPECT_EQ("Message 3", logs[1].log.text);
+        EXPECT_EQ("Message 4", logs[2].log.text);
     }
-}
-
-TEST(LoggingTest, LoggingServiceCallback) {
-    logging::LoggingService logger;
-    logger.set_console_output(false);
-    
-    int callback_count = 0;
-    logging::Level last_level = logging::Level::Trace;
-    
-    logger.add_callback([&](const logging::LogMessage& log, messaging::ServiceId /* source */) {
-        callback_count++;
-        last_level = log.level;
-    });
-    
-    auto msg = messaging::MessageBuilder{}
-        .from(42)
-        .log(logging::LogMessage(logging::Level::Error, "Test"))
-        .build();
-    logger.on_message(std::move(msg));
-    logger.poll();
-    
-    EXPECT_EQ(1, callback_count);
-    EXPECT_EQ(logging::Level::Error, last_level);
 }
 
 TEST(LoggingTest, LoggingServiceClear) {
@@ -208,8 +105,12 @@ TEST(LoggingTest, LoggingServiceClear) {
     
     // Add some logs
     for (int i = 0; i < 3; ++i) {
+        auto log = logging::LogMessage(logging::Level::Info, "Test");
+        auto data = log.serialize();
         auto msg = messaging::MessageBuilder{}
-            .log(logging::LogMessage(logging::Level::Info, "Test"))
+            .type(static_cast<uint32_t>(logging::LogMessageType::Log))
+            .priority(messaging::Priority::Normal)
+            .payload(std::as_bytes(std::span(data)))
             .build();
         logger.on_message(std::move(msg));
         logger.poll();

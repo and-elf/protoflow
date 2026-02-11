@@ -24,3 +24,7 @@ add_subdirectory(libs/protoflow-rpc)
 add_subdirectory(libs/protoflow-transport-tcp)
 add_subdirectory(libs/protoflow-transport-unix)
 
+# Add application test subdirectories
+if(BUILD_MAIN_APP)
+    add_subdirectory(apps/main-app)
+endif()
