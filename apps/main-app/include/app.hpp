@@ -14,7 +14,7 @@ namespace protoflow::mainapp {
 
 /// Main application runtime
 /// Manages services, routes messages, and schedules execution
-class Runtime {
+class App {
 
 public:
     struct Config {
@@ -30,8 +30,8 @@ public:
         std::unique_ptr<protoflow::rpc::transport_interface> rpc_server_transport;
     };
 
-    explicit Runtime(Config config);
-    ~Runtime();
+    explicit App(Config config);
+    ~App();
 
     /// Initialize runtime and all services
     bool initialize();
@@ -49,7 +49,6 @@ private:
     /// Execute one scheduler cycle
     void cycle();
 
-    /// Route messages between services
     void route_messages();
 
     Config config_;

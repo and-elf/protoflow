@@ -1,4 +1,4 @@
-#include "runtime.hpp"
+#include "app.hpp"
 #include "services/app_registration_service.hpp"
 #include "services/hardware_arbitration_service.hpp"
 #include "services/http_service.hpp"
@@ -25,21 +25,21 @@ namespace {
 }
 
 App::App(Config config)
-    : config_(std::move(config))
-{
-    g_runtime.store(this);
-    std::signal(SIGINT, signal_handler);
-    std::signal(SIGTERM, signal_handler);
-}
-
-App::~App() {
-    if (running_.load()) {
-        shutdown();
+        : config_(std::move(config))
+    {
+        g_runtime.store(this);
+        std::signal(SIGINT, signal_handler);
+        std::signal(SIGTERM, signal_handler);
     }
-    g_runtime.store(nullptr);
-}
 
-bool App::initialize() {
+    App::~App() {
+        if (running_.load()) {
+            shutdown();
+        }
+        g_runtime.store(nullptr);
+    }
+
+    bool App::initialize() {
     std::cout << "Initializing Protoflow Main Application Runtime...\n";
 
     // Initialize logging
@@ -96,10 +96,7 @@ bool App::initialize() {
         std::cout << "    * HTTPService (listening on " 
                   << config_.listen_address << ":" 
                   << config_.listen_port << ")\n";
-        auto http_service = std::make_unique<HTTPService>(
-            config_.listen_address,
-            config_.listen_port
-        );
+        auto http_service = std::make_unique<HTTPService>();
         services_.push_back(std::move(http_service));
     }
 
@@ -190,9 +187,6 @@ void App::route_messages() {
 
             // If no service declared subscriptions, fall back to broadcast
             if (!any_subscriptions) {
-                for (auto& dst_ptr : services_) {
-                    dst_ptr->on_message(protoflow::messaging::Message(msg));
-                }
                 continue;
             }
 
@@ -200,8 +194,6 @@ void App::route_messages() {
             for (auto& dst_ptr : services_) {
                 auto types = dst_ptr->get_message_types();
                 if (types.empty()) {
-                    // Empty list = wildcard
-                    dst_ptr->on_message(protoflow::messaging::Message(msg));
                     continue;
                 }
 

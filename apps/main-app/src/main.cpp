@@ -1,5 +1,5 @@
 
-#include "runtime.hpp"
+#include "app.hpp"
 #include <iostream>
 #include <CLI/CLI.hpp>
 #include <protoflow/config_parser.hpp>
@@ -10,7 +10,7 @@ constexpr const char* VERSION_STRING = "Protoflow Main Application v1.0.0\nBuilt
 
 
 int main(int argc, char* argv[]) {
-    protoflow::mainapp::Runtime::Config config;
+    protoflow::mainapp::App::Config config;
 
     CLI::App app{"Protoflow Main Application - Hardware arbitration and app registration"};
 
@@ -75,15 +75,15 @@ int main(int argc, char* argv[]) {
         rpc_tcp_port
     );
     try {
-        protoflow::mainapp::Runtime runtime(std::move(config));
+        protoflow::mainapp::App runtime_app(std::move(config));
 
-        if (!runtime.initialize()) {
-            std::cerr << "Error: Failed to initialize runtime\n";
+        if (!runtime_app.initialize()) {
+            std::cerr << "Error: Failed to initialize app\n";
             return 1;
         }
 
-        // Run runtime (blocks until shutdown)
-        runtime.run();
+        // Run app (blocks until shutdown)
+        runtime_app.run();
 
         std::cout << "\n";
         std::cout << "╔═══════════════════════════════════════════════════════════╗\n";

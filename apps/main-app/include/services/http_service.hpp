@@ -3,7 +3,7 @@
 #include <protoflow/service.hpp>
 #include <protoflow/http.hpp>
 #include <protoflow/html.hpp>
-#include "../messages.hpp"
+#include <protoflow/messages.hpp>
 #include <string>
 #include <functional>
 #include <unordered_map>
@@ -48,8 +48,7 @@ using HttpHandler = std::function<HttpResponse(const HttpRequest&)>;
 /// Aggregates UI fragments and serves JSON API
 class HTTPService : public service::Service {
 public:
-    HTTPService(const std::string& listen_address, uint16_t port);
-    ~HTTPService() override;
+    HTTPService() = default;
 
     void start() override;
     void stop() override;
@@ -113,11 +112,6 @@ private:
     uint64_t next_request_id_ = 1;
     
     static constexpr auto REQUEST_TIMEOUT = std::chrono::seconds(5);
-    
-    // HTTP server implementation (would be actual HTTP server)
-    // For now, this is a placeholder
-    struct HttpServerImpl;
-    std::unique_ptr<HttpServerImpl> server_impl_;
 };
 
 } // namespace protoflow::mainapp

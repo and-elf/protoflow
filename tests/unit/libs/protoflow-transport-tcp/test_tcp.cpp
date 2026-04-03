@@ -114,9 +114,12 @@ TEST_F(TcpClientTest, ConnectFailureNoServer) {
 }
 
 TEST_F(TcpClientTest, ConnectInvalidAddress) {
-    tcp_client client;
-    
-    auto result = client.connect("invalid.address", 8080);
+    tcp_config bad_cfg;
+    bad_cfg.host = "invalid.address";
+    bad_cfg.port = 8080;
+    tcp_client client(bad_cfg);
+
+    auto result = client.connect();
     
     EXPECT_FALSE(result.has_value());
 }
@@ -125,7 +128,7 @@ TEST_F(TcpClientTest, SendWhenNotConnected) {
     tcp_client client;
     
     std::array<std::byte, 10> data{};
-    auto result = client.send(data);
+    auto result = client.send_result(data);
     
     EXPECT_FALSE(result.has_value());
 }
@@ -226,9 +229,8 @@ TEST_F(TcpServerTest, StopWhenNotListening) {
 TEST_F(TcpServerTest, AcceptWhenNotListening) {
     tcp_server server;
     
-    auto result = server.accept();
-    
-    EXPECT_FALSE(result.has_value());
+    auto r = server.accept_client();
+    EXPECT_FALSE(r.has_value());
 }
 
 // Integration tests - client and server together
@@ -264,7 +266,7 @@ TEST_F(TcpIntegrationTest, ClientServerConnection) {
     });
 
     // Accept connection
-    auto accepted_client = server.accept();
+    auto accepted_client = server.accept_client();
     EXPECT_TRUE(accepted_client.has_value());
 
     if (accepted_client) {
@@ -288,16 +290,16 @@ TEST_F(TcpIntegrationTest, SendReceive) {
         std::this_thread::sleep_for(50ms);
         ASSERT_TRUE(client.connect("127.0.0.1", test_port).has_value());
         
-        auto sent = client.send(test_data);
+        auto sent = client.send_result(test_data);
         EXPECT_TRUE(sent.has_value());
         EXPECT_EQ(*sent, test_data.size());
     });
 
     // Server accepts and receives
-    auto accepted_client = server.accept();
+    auto accepted_client = server.accept_client();
     ASSERT_TRUE(accepted_client.has_value());
 
-    auto received = accepted_client->receive(test_data.size());
+    auto received = accepted_client->receive_result(test_data.size());
     EXPECT_TRUE(received.has_value());
     
     if (received) {
@@ -324,11 +326,11 @@ TEST_F(TcpIntegrationTest, BidirectionalCommunication) {
         ASSERT_TRUE(client.connect("127.0.0.1", test_port).has_value());
         
         // Send to server
-        auto sent = client.send(client_data);
+        auto sent = client.send_result(client_data);
         EXPECT_TRUE(sent.has_value());
 
         // Receive from server
-        auto received = client.receive(2);
+        auto received = client.receive_result(2);
         EXPECT_TRUE(received.has_value());
         if (received) {
             client_received = *received;
@@ -336,18 +338,18 @@ TEST_F(TcpIntegrationTest, BidirectionalCommunication) {
     });
 
     // Server accepts, receives, and sends
-    auto accepted_client = server.accept();
+    auto accepted_client = server.accept_client();
     ASSERT_TRUE(accepted_client.has_value());
 
     // Receive from client
-    auto received = accepted_client->receive(2);
+    auto received = accepted_client->receive_result(2);
     EXPECT_TRUE(received.has_value());
     if (received) {
         server_received = *received;
     }
 
     // Send to client
-    auto sent = accepted_client->send(server_data);
+    auto sent = accepted_client->send_result(server_data);
     EXPECT_TRUE(sent.has_value());
 
     client_thread.join();
@@ -375,7 +377,7 @@ TEST_F(TcpIntegrationTest, MultipleClients) {
             
             std::vector<std::byte> data = {std::byte(i)};
             if (result) {
-                (void)local_client.send(data);
+                (void)local_client.send_result(data);
             }
         });
     }
@@ -383,7 +385,7 @@ TEST_F(TcpIntegrationTest, MultipleClients) {
     // Accept connections
     std::vector<tcp_client> accepted_clients;
     for (int i = 0; i < num_clients; ++i) {
-        auto accepted = server.accept();
+        auto accepted = server.accept_client();
         EXPECT_TRUE(accepted.has_value());
         if (accepted) {
             accepted_clients.push_back(std::move(*accepted));
@@ -406,7 +408,7 @@ TEST_F(TcpIntegrationTest, PeerInformation) {
         [[maybe_unused]] auto result = client.connect("127.0.0.1", test_port);
     });
 
-    auto accepted_client = server.accept();
+    auto accepted_client = server.accept_client();
     ASSERT_TRUE(accepted_client.has_value());
 
     if (accepted_client) {

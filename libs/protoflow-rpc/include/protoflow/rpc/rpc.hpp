@@ -2,6 +2,6 @@
 
 // Main RPC library header - includes all public interfaces
 
-#include "protocol.hpp"
-#include "rpc_base.hpp"
-#include "rpc_app.hpp"
+#include <protoflow/rpc/protocol.hpp>
+#include <protoflow/rpc/rpc_base.hpp>
+#include <protoflow/rpc/rpc_app.hpp>

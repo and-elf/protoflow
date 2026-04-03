@@ -103,7 +103,7 @@ private:
     void on_shutdown();
     
     // RPC protocol handlers
-    void handle_hello_ack(std::span<const std::byte> payload);
+    void handle_hello(std::span<const std::byte> payload);
     void handle_register_ack(std::span<const std::byte> payload);
     void handle_heartbeat_ack(std::span<const std::byte> payload);
     

@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <type_traits>
 #include <string_view>
 #include <vector>
 #include <span>
@@ -19,6 +20,32 @@ using ServiceId = uint32_t;
 /// Message type tag for identifying payload contents
 using MessageType = uint32_t;
 
+/// Wrapper type used for header fields that accept message-type-like values.
+/// Accepts enums (including `enum class`) and integral types implicitly.
+struct MessageTag {
+    MessageType value{0};
+
+    constexpr MessageTag() noexcept = default;
+    constexpr MessageTag(MessageType v) noexcept : value(v) {}
+
+    template<typename E, std::enable_if_t<std::is_enum_v<E> || std::is_integral_v<E>, int> = 0>
+    constexpr MessageTag(E e) noexcept : value(static_cast<MessageType>(e)) {}
+
+    template<typename E, std::enable_if_t<std::is_enum_v<E>, int> = 0>
+    constexpr operator E() const noexcept { return static_cast<E>(value); }
+
+    constexpr operator MessageType() const noexcept { return value; }
+
+    constexpr bool operator==(const MessageTag& o) const noexcept { return value == o.value; }
+    constexpr bool operator!=(const MessageTag& o) const noexcept { return !(*this == o); }
+};
+
+// Comparison helpers to avoid ambiguous conversions with built-in operators.
+constexpr bool operator==(const MessageTag& a, MessageType b) noexcept { return a.value == b; }
+constexpr bool operator==(MessageType a, const MessageTag& b) noexcept { return a == b.value; }
+constexpr bool operator!=(const MessageTag& a, MessageType b) noexcept { return !(a == b); }
+constexpr bool operator!=(MessageType a, const MessageTag& b) noexcept { return !(a == b); }
+
 /// Well-known message types
 namespace MessageTypes {
     constexpr MessageType Unknown = 0;
@@ -27,6 +54,8 @@ namespace MessageTypes {
     constexpr MessageType Log = 3;
     // Libraries can define their own types starting from 100
     constexpr MessageType RpcBase = 100;
+    constexpr MessageType AppRegistrationRequests = 120;
+    constexpr MessageType AppRegistrationResponses = 130;
 }
 
 /// Message priority levels
@@ -41,9 +70,9 @@ enum class Priority : uint8_t {
 struct MessageHeader {
     MessageId id{0};
     ServiceId source{0};
-    MessageType type{MessageTypes::Unknown};
+    MessageTag type{MessageTypes::Unknown};
     Priority priority{Priority::Normal};
-    uint64_t timestamp{0};
+    int64_t timestamp{0};
     
     bool operator==(const MessageHeader&) const = default;
 };
@@ -76,7 +105,7 @@ struct Message {
         return data.size();
     }
     
-    [[nodiscard]] MessageType type() const noexcept {
+    [[nodiscard]] MessageTag type() const noexcept {
         return header.type;
     }
     
@@ -99,7 +128,7 @@ public:
         return *this;
     }
     
-    MessageBuilder& type(MessageType t) {
+    MessageBuilder& type(MessageTag t) {
         header_.type = t;
         return *this;
     }
@@ -109,7 +138,7 @@ public:
         return *this;
     }
     
-    MessageBuilder& timestamp(uint64_t ts) {
+    MessageBuilder& timestamp(int64_t ts) {
         header_.timestamp = ts;
         return *this;
     }

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <protoflow/service.hpp>
+#include <protoflow/messages.hpp>
+#include <protoflow/app_registration_protocol/messages.hpp>
 #include <protoflow/logging/macros.hpp>
 #include <app_state_machine.hpp>
 #include <string>
@@ -32,7 +34,6 @@ struct AppStateSink {
 /// Application metadata with FSM-based lifecycle management
 struct AppRegistration {
     std::string name;
-    std::string version;
     std::vector<std::string> endpoints;
     std::vector<std::string> hw_requirements;
     std::chrono::steady_clock::time_point last_keepalive;
@@ -43,7 +44,7 @@ struct AppRegistration {
 /// Handles app lifecycle and state tracking via messaging
 class AppRegistrationService : public service::Service {
 public:
-    AppRegistrationService(std::chrono::milliseconds check_interval = std::chrono::milliseconds(5000));
+    explicit AppRegistrationService(std::chrono::milliseconds check_interval = std::chrono::milliseconds(5000));
     ~AppRegistrationService() override;
 
     void start() override;
@@ -62,6 +63,9 @@ private:
     [[nodiscard]] std::vector<const AppRegistration*> get_registered_apps() const;
     /// Register a new application (takes ownership via move)
     bool register_app(AppRegistration&& registration);
+
+    bool register_app(std::optional<AppRegistrationEvent> event);
+
 
     /// Unregister an application
     void unregister_app(const std::string& name);

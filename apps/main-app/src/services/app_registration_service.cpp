@@ -1,24 +1,24 @@
 #include "services/app_registration_service.hpp"
-#include "messages.hpp"
 #include <protoflow/logging/macros.hpp>
 #include <nlohmann/json.hpp>
 #include <sstream>
+#include <protoflow/messaging/message.hpp>
+#include <protoflow/messages.hpp>
 
 namespace protoflow::mainapp {
 
-using json = nlohmann::json;
-
+using json = nlohmann::json; 
+using namespace protoflow::app_registration_protocol;
 AppRegistrationService::AppRegistrationService(std::chrono::milliseconds check_interval)
-    : check_interval_(check_interval)
-    , last_check_(std::chrono::steady_clock::now())
-{
-}
+    : Service({request::hello,
+             request::register_app,
+             request::heartbeat,
+             request::unregister_app})
+    , check_interval_(check_interval)
+    , last_check_(std::chrono::steady_clock::now()) {}
+AppRegistrationService::~AppRegistrationService() = default; 
 
-AppRegistrationService::~AppRegistrationService() = default;
-
-void AppRegistrationService::start() {
-    PROTOFLOW_LOG_INFO(*this, "Started");
-}
+void AppRegistrationService::start() { PROTOFLOW_LOG_INFO(*this, "Started"); }
 
 void AppRegistrationService::stop() {
     PROTOFLOW_LOG_INFO(*this, "Stopped");
@@ -33,12 +33,21 @@ void AppRegistrationService::poll() {
 
 }
 
+bool AppRegistrationService::register_app(std::optional<AppRegistrationEvent> event) {
+    if (!event) return false;
+    
+    AppRegistration registration;
+    registration.name = std::move(event->app_name);
+    registration.endpoints = std::move(event->endpoints);
+    
+    return register_app(std::move(registration));
+}
+
 bool AppRegistrationService::register_app(AppRegistration&& registration) {
     if (auto app = get_app(registration.name)) {
         // Re-registration of existing app
         auto& reg = app->get();
         PROTOFLOW_LOG_INFO(*this, "Re-registering app: " << registration.name);
-        reg.version = registration.version;
         reg.endpoints = registration.endpoints;
         reg.hw_requirements = registration.hw_requirements;
         reg.last_keepalive = std::chrono::steady_clock::now();
@@ -48,7 +57,6 @@ bool AppRegistrationService::register_app(AppRegistration&& registration) {
     } else {
         // New registration
         PROTOFLOW_LOG_INFO(*this, "Registering new app: " << registration.name);
-        PROTOFLOW_LOG_INFO(*this, "  - Version: " << registration.version);
         
         std::ostringstream endpoints_oss;
         for (const auto& ep : registration.endpoints) {
@@ -144,7 +152,6 @@ void AppRegistrationService::update_keepalive(const std::string& name) {
         
         json app_json{
             {"name", name},
-            {"version", reg.version},
             {"status", state_to_string(reg.fsm->state())},
             {"endpoints", reg.endpoints},
             {"state", json::object()}
@@ -159,29 +166,68 @@ void AppRegistrationService::update_keepalive(const std::string& name) {
     return result.dump(2);
 }
 
+
+
 void AppRegistrationService::handle(messaging::Message&& msg) {
-    switch (msg.type()) {
-        case MessageTypes::AppRegistrationEvent: {
-            if (auto event = AppRegistrationEvent::deserialize(msg.bytes())) {
-                AppRegistration registration;
-                registration.name = std::move(event->app_name);
-                registration.version = std::move(event->version);
-                registration.endpoints = std::move(event->endpoints);
-                register_app(std::move(registration));
+    using request = protoflow::app_registration_protocol::request;
+    switch (static_cast<request>(msg.type())) {
+
+        case request::hello:
+            write(messaging::MessageBuilder{}
+                .from(service_id_)
+                .type(response::hello_ack)
+                .timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count())
+                .build());
+            break;
+
+        case request::register_app:
+            if (register_app(AppRegistrationEvent::deserialize(msg.bytes()))) {
+            } else {
+                PROTOFLOW_LOG_WARN(*this, "Failed to deserialize AppRegistrationEvent from message");
             }
             break;
-        }
-        
-        case MessageTypes::AppUnregistrationEvent: {
-            if (auto event = AppUnregistrationEvent::deserialize(msg.bytes())) {
-                unregister_app(event->app_name);
-            }
+
+        case request::heartbeat:
+            write(messaging::MessageBuilder{}
+                .from(service_id_)
+                .type(response::heartbeat_ack)
+                .timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count())
+                .build());
             break;
-        }
-        
-        default:
-            // Unknown message type, ignore
+        case request::unregister_app:
+            PROTOFLOW_LOG_INFO(*this, "Received message type: " << msg.type()
+                              << ", size: " << msg.size() << " bytes");
+            // For simplicity, we will not implement full deserialization here
+            // In a complete implementation, we would parse the message bytes into the appropriate event struct and call the corresponding handler
             break;
+        case request::error:
+            PROTOFLOW_LOG_WARN(*this, "Received unsupported message type: " << msg.type());
+            break;
+
+
+        // case  {
+        //     if (auto event = AppRegistrationEvent::deserialize(msg.bytes())) {
+        //         AppRegistration registration;
+        //         registration.name = std::move(event->app_name);
+        //         registration.version = std::move(event->version);
+        //         registration.endpoints = std::move(event->endpoints);
+        //         register_app(std::move(registration));
+        //     }
+        //     break;
+        // }
+        
+        // case MessageTypes::AppUnregistrationEvent: {
+        //     if (auto event = AppUnregistrationEvent::deserialize(msg.bytes())) {
+        //         unregister_app(event->app_name);
+        //     }
+        //     break;
+        // }
+        
+        // default:
+        //     // Unknown message type, ignore
+        //     break;
     }
 }
 

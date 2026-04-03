@@ -9,17 +9,19 @@
 #include <cstring>
 #include <poll.h>
 
+#include <protoflow/transport/common.hpp>
+
 namespace protoflow::transport::tcp {
 
 // Helper to create tcp_error from errno
-static tcp_error make_error(int err_code, std::string_view context) {
+tcp_error make_error(int err_code, std::string_view context) {
     return tcp_error{
         .error_code = err_code,
         .message = std::string(context) + ": " + std::strerror(err_code)
     };
 }
 
-static tcp_error make_error(std::string_view message) {
+tcp_error make_error(std::string_view message) {
     return tcp_error{.error_code = -1, .message = std::string(message)};
 }
 
@@ -30,8 +32,56 @@ static tcp_error make_error(std::string_view message) {
 tcp_client::tcp_client(const tcp_config& config)
     : config_(config) {}
 
+tcp_client::tcp_client()
+    : config_() {}
+
+std::expected<void, tcp_error> tcp_client::connect() {
+    return connect(config_.host, config_.port);
+}
+
+std::expected<void, tcp_error> tcp_client::connect(std::string_view host, uint16_t port) {
+    // Close existing socket if any
+    close_socket();
+
+    // Create socket
+    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return std::unexpected(make_error(errno, "Failed to create socket"));
+    }
+
+    struct sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+
+    if (inet_pton(AF_INET, std::string(host).c_str(), &addr.sin_addr) <= 0) {
+        ::close(fd);
+        return std::unexpected(make_error("Invalid address"));
+    }
+
+    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+        int err = errno;
+        ::close(fd);
+        return std::unexpected(make_error(err, "Connect failed"));
+    }
+
+    socket_fd_ = fd;
+    state_ = connection_state::connected;
+
+    if (auto res = set_socket_options(); !res) {
+        close_socket();
+        return res;
+    }
+
+    return {};
+}
+
 tcp_client::~tcp_client() {
     close_socket();
+}
+
+void tcp_client::adopt_socket(int fd) noexcept {
+    socket_fd_ = fd;
+    state_ = connection_state::connected;
 }
 
 tcp_client::tcp_client(tcp_client&& other) noexcept
@@ -54,134 +104,36 @@ tcp_client& tcp_client::operator=(tcp_client&& other) noexcept {
     return *this;
 }
 
-std::expected<void, tcp_error> tcp_client::connect() {
-    return connect(config_.host, config_.port);
+std::expected<void, tcp_error> tcp_server::listen(uint16_t port) {
+    config_.port = port;
+    return listen();
 }
 
-std::expected<void, tcp_error> tcp_client::connect(std::string_view host, uint16_t port) {
-    if (state_ == connection_state::connected) {
-        return std::unexpected(make_error("Already connected"));
-    }
-
+void tcp_server::stop() noexcept {
     close_socket();
-    state_ = connection_state::connecting;
-
-    // Create socket
-    socket_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd_ < 0) {
-        state_ = connection_state::error;
-        return std::unexpected(make_error(errno, "Failed to create socket"));
-    }
-
-    // Set socket options
-    if (auto result = set_socket_options(); !result) {
-        close_socket();
-        state_ = connection_state::error;
-        return result;
-    }
-
-    // Setup address
-    struct sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-
-    if (inet_pton(AF_INET, std::string(host).c_str(), &addr.sin_addr) <= 0) {
-        close_socket();
-        state_ = connection_state::error;
-        return std::unexpected(make_error("Invalid address"));
-    }
-
-    // Set non-blocking for timeout support
-    int flags = fcntl(socket_fd_, F_GETFL, 0);
-    fcntl(socket_fd_, F_SETFL, flags | O_NONBLOCK);
-
-    // Attempt connection
-    int result = ::connect(socket_fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
-    
-    if (result < 0 && errno != EINPROGRESS) {
-        int err = errno;
-        close_socket();
-        state_ = connection_state::error;
-        return std::unexpected(make_error(err, "Connection failed"));
-    }
-
-    // Wait for connection with timeout
-    if (result < 0) {
-        struct pollfd pfd{};
-        pfd.fd = socket_fd_;
-        pfd.events = POLLOUT;
-
-        int poll_result = poll(&pfd, 1, static_cast<int>(config_.connect_timeout_ms));
-        
-        if (poll_result == 0) {
-            close_socket();
-            state_ = connection_state::error;
-            return std::unexpected(make_error("Connection timeout"));
-        }
-        
-        if (poll_result < 0) {
-            int err = errno;
-            close_socket();
-            state_ = connection_state::error;
-            return std::unexpected(make_error(err, "Poll failed"));
-        }
-
-        // Check for errors
-        int error = 0;
-        socklen_t len = sizeof(error);
-        if (getsockopt(socket_fd_, SOL_SOCKET, SO_ERROR, &error, &len) < 0) {
-            int err = errno;
-            close_socket();
-            state_ = connection_state::error;
-            return std::unexpected(make_error(err, "getsockopt failed"));
-        }
-
-        if (error != 0) {
-            close_socket();
-            state_ = connection_state::error;
-            return std::unexpected(make_error(error, "Connection failed"));
-        }
-    }
-
-    // Restore blocking mode
-    fcntl(socket_fd_, F_SETFL, flags);
-
-    state_ = connection_state::connected;
-    return {};
+}
+// Backwards-compatible detailed send returning bytes or tcp_error
+std::expected<size_t, tcp_error> tcp_client::send_result(std::span<const std::byte> data) {
+    return protoflow::transport::detail::send_result_impl<tcp_error>(
+        socket_fd_,
+        [this]() { this->state_ = connection_state::error; },
+        [](int err, std::string_view ctx) { return make_error(err, ctx); },
+        [](std::string_view msg) { return make_error(msg); },
+        data
+    );
 }
 
-void tcp_client::disconnect() noexcept {
-    close_socket();
-    state_ = connection_state::disconnected;
+// transport_interface-compatible send: return true on success
+bool tcp_client::send(std::span<const std::byte> data) {
+    auto res = send_result(data);
+    return res.has_value() && *res > 0;
 }
 
-std::expected<size_t, tcp_error> tcp_client::send(std::span<const std::byte> data) {
-    if (state_ != connection_state::connected) {
-        return std::unexpected(make_error("Not connected"));
-    }
-
-    if (data.empty()) {
-        return 0;
-    }
-
-    ssize_t sent = ::send(socket_fd_, data.data(), data.size(), MSG_NOSIGNAL);
-    
-    if (sent < 0) {
-        int err = errno;
-        if (err == EAGAIN) {
-            return std::unexpected(make_error(err, "Send would block"));
-        }
-        state_ = connection_state::error;
-        return std::unexpected(make_error(err, "Send failed"));
-    }
-
-    return static_cast<size_t>(sent);
-}
-
-std::expected<std::vector<std::byte>, tcp_error> tcp_client::receive(size_t max_bytes) {
+// Backwards-compatible detailed receive returning tcp_error
+std::expected<std::vector<std::byte>, tcp_error> tcp_client::receive_result(size_t max_bytes) {
     std::vector<std::byte> buffer(max_bytes);
     auto result = receive_into(buffer);
-    
+
     if (!result) {
         return std::unexpected(result.error());
     }
@@ -190,33 +142,30 @@ std::expected<std::vector<std::byte>, tcp_error> tcp_client::receive(size_t max_
     return buffer;
 }
 
+// transport_interface-compatible receive: convert tcp_error -> string
+std::expected<std::vector<std::byte>, std::string> tcp_client::receive(size_t max_bytes) {
+    auto r = receive_result(max_bytes);
+    if (!r) return std::unexpected(r.error().to_string());
+    return *r;
+}
+
+void tcp_client::close() {
+    disconnect();
+}
+
+void tcp_client::disconnect() noexcept {
+    close_socket();
+    state_ = connection_state::disconnected;
+}
+
 std::expected<size_t, tcp_error> tcp_client::receive_into(std::span<std::byte> buffer) {
-    if (state_ != connection_state::connected) {
-        return std::unexpected(make_error("Not connected"));
-    }
-
-    if (buffer.empty()) {
-        return 0;
-    }
-
-    ssize_t received = ::recv(socket_fd_, buffer.data(), buffer.size(), 0);
-    
-    if (received < 0) {
-        int err = errno;
-        if (err == EAGAIN) {
-            return std::unexpected(make_error(err, "Receive would block"));
-        }
-        state_ = connection_state::error;
-        return std::unexpected(make_error(err, "Receive failed"));
-    }
-
-    if (received == 0) {
-        // Connection closed by peer
-        state_ = connection_state::disconnected;
-        return std::unexpected(make_error("Connection closed by peer"));
-    }
-
-    return static_cast<size_t>(received);
+    return protoflow::transport::detail::receive_into_impl<tcp_error>(
+        socket_fd_,
+        [this]() { this->state_ = connection_state::disconnected; },
+        [](int err, std::string_view ctx) { return make_error(err, ctx); },
+        [](std::string_view msg) { return make_error(msg); },
+        buffer
+    );
 }
 
 std::string tcp_client::peer_address() const {
@@ -226,7 +175,7 @@ std::string tcp_client::peer_address() const {
 
     struct sockaddr_in addr{};
     socklen_t len = sizeof(addr);
-    
+
     if (getpeername(socket_fd_, reinterpret_cast<struct sockaddr*>(&addr), &len) < 0) {
         return "";
     }
@@ -243,7 +192,7 @@ uint16_t tcp_client::peer_port() const {
 
     struct sockaddr_in addr{};
     socklen_t len = sizeof(addr);
-    
+
     if (getpeername(socket_fd_, reinterpret_cast<struct sockaddr*>(&addr), &len) < 0) {
         return 0;
     }
@@ -286,6 +235,9 @@ std::expected<void, tcp_error> tcp_client::set_socket_options() {
 // tcp_server implementation
 //============================================================================
 
+tcp_server::tcp_server()
+    : config_() {}
+
 tcp_server::tcp_server(const tcp_config& config)
     : config_(config) {}
 
@@ -310,10 +262,6 @@ tcp_server& tcp_server::operator=(tcp_server&& other) noexcept {
 }
 
 std::expected<void, tcp_error> tcp_server::listen() {
-    return listen(config_.port);
-}
-
-std::expected<void, tcp_error> tcp_server::listen(uint16_t port) {
     if (socket_fd_ >= 0) {
         return std::unexpected(make_error("Already listening"));
     }
@@ -334,7 +282,7 @@ std::expected<void, tcp_error> tcp_server::listen(uint16_t port) {
     struct sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(port);
+    addr.sin_port = htons(config_.port);
 
     if (::bind(socket_fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
         int err = errno;
@@ -349,15 +297,16 @@ std::expected<void, tcp_error> tcp_server::listen(uint16_t port) {
         return std::unexpected(make_error(err, "Listen failed"));
     }
 
-    config_.port = port;
     return {};
 }
 
-void tcp_server::stop() noexcept {
-    close_socket();
+std::unique_ptr<protoflow::rpc::transport_interface> tcp_server::accept() {
+    auto res = accept_client();
+    if (!res) return nullptr;
+    return std::make_unique<tcp_client>(std::move(*res));
 }
 
-std::expected<tcp_client, tcp_error> tcp_server::accept() {
+std::expected<tcp_client, tcp_error> tcp_server::accept_client() {
     if (socket_fd_ < 0) {
         return std::unexpected(make_error("Not listening"));
     }
@@ -366,21 +315,37 @@ std::expected<tcp_client, tcp_error> tcp_server::accept() {
     socklen_t addr_len = sizeof(client_addr);
 
     int client_fd = ::accept(socket_fd_, reinterpret_cast<struct sockaddr*>(&client_addr), &addr_len);
-    
     if (client_fd < 0) {
         return std::unexpected(make_error(errno, "Accept failed"));
     }
 
-    // Create tcp_client from accepted socket
-    tcp_client client;
-    client.socket_fd_ = client_fd;
-    client.state_ = connection_state::connected;
-    client.config_ = config_;
+    tcp_config client_config = config_;
+    tcp_client client(client_config);
+    client.set_config(client_config);
+    client.adopt_socket(client_fd);
 
-    // Set options on accepted socket
-    if (auto result = client.set_socket_options(); !result) {
+    // Set options on accepted socket (mirror tcp_client::set_socket_options)
+    client.adopt_socket(client_fd);
+
+    if (client.socket_fd() < 0) {
         ::close(client_fd);
-        return std::unexpected(result.error());
+        return std::unexpected(make_error("Invalid socket"));
+    }
+
+    if (client.config().nodelay) {
+        int flag = 1;
+        if (setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) < 0) {
+            ::close(client_fd);
+            return std::unexpected(make_error(errno, "Failed to set TCP_NODELAY"));
+        }
+    }
+
+    if (client.config().reuse_addr) {
+        int flag = 1;
+        if (setsockopt(client_fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
+            ::close(client_fd);
+            return std::unexpected(make_error(errno, "Failed to set SO_REUSEADDR"));
+        }
     }
 
     return client;

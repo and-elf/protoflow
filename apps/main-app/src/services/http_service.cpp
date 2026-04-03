@@ -1,23 +1,9 @@
 #include "services/http_service.hpp"
-#include "messages.hpp"
+#include <protoflow/messages.hpp>
 #include <protoflow/logging/macros.hpp>
 #include <sstream>
 
 namespace protoflow::mainapp {
-
-// Placeholder HTTP server implementation
-struct HTTPService::HttpServerImpl {
-    // In a full implementation, this would use an actual HTTP server library
-    // like cpp-httplib, Boost.Beast, or a custom TCP-based implementation
-};
-
-HTTPService::HTTPService(const std::string& listen_address, uint16_t port)
-    : listen_address_(listen_address)
-    , port_(port)
-{
-}
-
-HTTPService::~HTTPService() = default;
 
 void HTTPService::start() {
     PROTOFLOW_LOG_INFO(*this, "Starting HTTP server on " 
@@ -205,32 +191,13 @@ void HTTPService::handle(service::Message&& msg) {
                       << ", size=" << msg.size() << " bytes");
     
     // Dispatch based on MessageType by casting raw bytes
-    switch (msg.type()) {
-        case MessageTypes::AppRegistrationEvent: {
-            if (auto event = AppRegistrationEvent::deserialize(msg.bytes())) {
-                handle_app_registration(*event);
-            } else {
-                PROTOFLOW_LOG_ERROR(*this, "Failed to deserialize AppRegistrationEvent");
-            }
-            break;
-        }
+    // switch (msg.type()) {
+
         
-        case MessageTypes::AppUnregistrationEvent: {
-            if (auto event = AppUnregistrationEvent::deserialize(msg.bytes())) {
-                handle_app_unregistration(*event);
-            } else {
-                PROTOFLOW_LOG_ERROR(*this, "Failed to deserialize AppUnregistrationEvent");
-            }
-            break;
-        }
-        
-        // TODO: Handle other message types (NavigationResponse, StateResponse, etc.)
-        // when their serialization is implemented
-        
-        default:
-            PROTOFLOW_LOG_WARN(*this, "Unknown message type: " << msg.type());
-            break;
-    }
+    //     default:
+    //         PROTOFLOW_LOG_WARN(*this, "Unknown message type: " << msg.type());
+    //         break;
+    // }
 }
 
 std::vector<service::Message> HTTPService::generate_outbound() {
@@ -245,7 +212,6 @@ std::vector<service::Message> HTTPService::generate_outbound() {
 
 void HTTPService::handle_app_registration(const AppRegistrationEvent& event) {
     PROTOFLOW_LOG_INFO(*this, "App registered: " << event.app_name 
-                      << " v" << event.version 
                       << " with " << event.endpoints.size() << " endpoints");
     
     // Dynamically register endpoints for this app

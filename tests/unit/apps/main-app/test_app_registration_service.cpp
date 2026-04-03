@@ -1,9 +1,10 @@
 #include <gtest/gtest.h>
 #include "services/app_registration_service.hpp"
-#include "messages.hpp"
+#include <protoflow/messages.hpp>
 
 using namespace protoflow;
 using namespace protoflow::mainapp;
+using namespace protoflow::app_registration_protocol;
 
 class AppRegistrationServiceTest : public ::testing::Test {
 protected:
@@ -24,13 +25,12 @@ TEST_F(AppRegistrationServiceTest, HandleRegisterAppMessage) {
     // Arrange: Create registration event
     AppRegistrationEvent event;
     event.app_name = "test-app";
-    event.version = "1.0";
     event.endpoints = {"tcp://localhost:5000", "unix:///tmp/test.sock"};
     
     auto payload = event.serialize();
     
     messaging::MessageHeader header;
-    header.type = MessageTypes::AppRegistrationEvent;
+    header.type = request::register_app;
     
     messaging::Message msg{header, std::move(payload)};
     
@@ -52,12 +52,11 @@ TEST_F(AppRegistrationServiceTest, HandleUnregisterMessage) {
     // Arrange: Register app first
     AppRegistrationEvent reg_event;
     reg_event.app_name = "test-app";
-    reg_event.version = "1.0";
     reg_event.endpoints = {"tcp://localhost:5000"};
-    
+
     auto reg_payload = reg_event.serialize();
     messaging::MessageHeader reg_header;
-    reg_header.type = MessageTypes::AppRegistrationEvent;
+    reg_header.type = request::register_app;
     service_->on_message(messaging::Message{reg_header, std::move(reg_payload)});
     service_->poll();
     
@@ -70,7 +69,7 @@ TEST_F(AppRegistrationServiceTest, HandleUnregisterMessage) {
     
     auto unreg_payload = unreg_event.serialize();
     messaging::MessageHeader unreg_header;
-    unreg_header.type = MessageTypes::AppUnregistrationEvent;
+    unreg_header.type = request::unregister_app;
     
     messaging::Message msg{unreg_header, std::move(unreg_payload)};
     
@@ -102,7 +101,7 @@ TEST_F(AppRegistrationServiceTest, UnknownMessageTypeIgnored) {
 TEST_F(AppRegistrationServiceTest, MalformedRegistrationMessageRejected) {
     // Arrange: Create message with insufficient payload
     messaging::MessageHeader header;
-    header.type = MessageTypes::AppRegistrationEvent;
+    header.type = request::register_app;
     std::vector<std::byte> payload{std::byte{1}, std::byte{2}}; // Too small
     messaging::Message msg{header, std::move(payload)};
     
@@ -120,22 +119,20 @@ TEST_F(AppRegistrationServiceTest, MultipleApps) {
     // Register app1
     AppRegistrationEvent event1;
     event1.app_name = "app1";
-    event1.version = "1.0";
     event1.endpoints = {"tcp://localhost:5000"};
     
     messaging::MessageHeader header1;
-    header1.type = MessageTypes::AppRegistrationEvent;
+    header1.type = request::register_app;
     service_->on_message(messaging::Message{header1, event1.serialize()});
     service_->poll();
     
     // Register app2
     AppRegistrationEvent event2;
     event2.app_name = "app2";
-    event2.version = "2.0";
     event2.endpoints = {"unix:///tmp/app2.sock"};
     
     messaging::MessageHeader header2;
-    header2.type = MessageTypes::AppRegistrationEvent;
+    header2.type = request::register_app;
     service_->on_message(messaging::Message{header2, event2.serialize()});
     service_->poll();
     
@@ -149,7 +146,7 @@ TEST_F(AppRegistrationServiceTest, MultipleApps) {
     unreg_event.app_name = "app1";
     
     messaging::MessageHeader unreg_header;
-    unreg_header.type = MessageTypes::AppUnregistrationEvent;
+    unreg_header.type = request::unregister_app;
     service_->on_message(messaging::Message{unreg_header, unreg_event.serialize()});
     service_->poll();
     

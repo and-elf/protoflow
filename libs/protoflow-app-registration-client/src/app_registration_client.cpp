@@ -37,8 +37,8 @@ namespace {
     }
     
     // Helper to create protocol message
-    service::Message make_protocol_message(command cmd, std::span<const std::byte> payload) {
-        // Protocol format: [command:2][payload_size:2][payload]
+    service::Message make_protocol_message(request cmd, std::span<const std::byte> payload) {
+        // Protocol format: [request:2][payload_size:2][payload]
         std::vector<std::byte> data;
         data.resize(4 + payload.size());
         
@@ -294,34 +294,34 @@ void AppRegistrationClient::handle(service::Message&& msg) {
         return;
     }
     
-    // Parse protocol header: [command:2][size:2][payload]
+    // Parse protocol header: [response:2][size:2][payload]
     uint16_t cmd_val;
     uint16_t size_val;
     std::memcpy(&cmd_val, msg.data.data(), 2);
     std::memcpy(&size_val, msg.data.data() + 2, 2);
     
-    auto cmd = static_cast<command>(cmd_val);
+    auto cmd = static_cast<response>(cmd_val);
     std::span<const std::byte> payload(msg.data.data() + 4, size_val);
     
     PROTOFLOW_LOG_DEBUG(*this, "Received " << to_string(cmd) << " (" << size_val << " bytes)");
     
-    // Dispatch based on command
+    // Dispatch based on response
     switch (cmd) {
-        case command::hello_ack:
-            handle_hello_ack(payload);
+        case response::hello_ack:
+            handle_hello(payload);
             break;
-        case command::register_ack:
+        case response::register_ack:
             handle_register_ack(payload);
             break;
-        case command::heartbeat_ack:
+        case response::heartbeat_ack:
             handle_heartbeat_ack(payload);
             break;
-        case command::error:
+        case response::error:
             PROTOFLOW_LOG_ERROR(*this, "Received error from server");
             process_event(Event::FatalError);
             break;
         default:
-            PROTOFLOW_LOG_WARN(*this, "Unexpected command: " << to_string(cmd));
+            PROTOFLOW_LOG_WARN(*this, "Unexpected request: " << to_string(cmd));
             break;
     }
 }
@@ -361,7 +361,7 @@ void AppRegistrationClient::on_connected() {
         sizeof(msg)
     );
     
-    outbound_queue_.push(make_protocol_message(command::hello, payload));
+    outbound_queue_.push(make_protocol_message(request::hello, payload));
 }
 
 void AppRegistrationClient::on_handshake_complete() {
@@ -378,7 +378,7 @@ void AppRegistrationClient::on_handshake_complete() {
         sizeof(msg)
     );
     
-    outbound_queue_.push(make_protocol_message(command::register_app, payload));
+    outbound_queue_.push(make_protocol_message(request::register_app, payload));
 }
 
 void AppRegistrationClient::on_registration_ack() {
@@ -399,7 +399,7 @@ void AppRegistrationClient::on_heartbeat_tick() {
         sizeof(msg)
     );
     
-    outbound_queue_.push(make_protocol_message(command::heartbeat, payload));
+    outbound_queue_.push(make_protocol_message(request::heartbeat, payload));
     last_heartbeat_ = std::chrono::steady_clock::now();
 }
 
@@ -445,7 +445,7 @@ void AppRegistrationClient::on_shutdown() {
 // App Registration Protocol Handlers
 // ============================================================================
 
-void AppRegistrationClient::handle_hello_ack(std::span<const std::byte> payload) {
+void AppRegistrationClient::handle_hello(std::span<const std::byte> payload) {
     if (payload.size() < sizeof(hello_ack)) {
         PROTOFLOW_LOG_ERROR(*this, "Invalid HELLO_ACK size");
         process_event(Event::FatalError);

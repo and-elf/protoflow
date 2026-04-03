@@ -13,3 +13,8 @@ protoflow_add_library(
     PUBLIC_INCLUDE_DIRS
         include
 )
+
+target_link_libraries(protoflow-transport-tcp
+    PUBLIC
+        protoflow-rpc-protocol
+)

@@ -10,7 +10,7 @@ February 9, 2026
 
 ## Components Implemented
 
-### 1. Core Runtime ([include/runtime.hpp](include/runtime.hpp), [src/runtime.cpp](src/runtime.cpp))
+### 1. Core App ([include/app.hpp](include/app.hpp), [src/app.cpp](src/app.cpp))
 
 **Features**:
 - Service lifecycle management (initialize, start, stop)

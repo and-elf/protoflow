@@ -120,7 +120,7 @@ TEST_F(UnixClientTest, SendWhenNotConnected) {
     unix_client client;
     
     std::array<std::byte, 10> data{};
-    auto result = client.send(data);
+    auto result = client.send_result(data);
     
     EXPECT_FALSE(result.has_value());
 }
@@ -219,9 +219,8 @@ TEST_F(UnixServerTest, StopWhenNotListening) {
 TEST_F(UnixServerTest, AcceptWhenNotListening) {
     unix_server server;
     
-    auto result = server.accept();
-    
-    EXPECT_FALSE(result.has_value());
+    auto r = server.accept_client();
+    EXPECT_FALSE(r.has_value());
 }
 
 // Integration tests
@@ -257,7 +256,7 @@ TEST_F(UnixIntegrationTest, ClientServerConnection) {
         EXPECT_TRUE(result.has_value());
     });
 
-    auto accepted_client = server.accept();
+    auto accepted_client = server.accept_client();
     EXPECT_TRUE(accepted_client.has_value());
 
     if (accepted_client) {
@@ -278,15 +277,15 @@ TEST_F(UnixIntegrationTest, SendReceive) {
         std::this_thread::sleep_for(50ms);
         ASSERT_TRUE(client.connect(test_socket).has_value());
         
-        auto sent = client.send(test_data);
+        auto sent = client.send_result(test_data);
         EXPECT_TRUE(sent.has_value());
         EXPECT_EQ(*sent, test_data.size());
     });
 
-    auto accepted_client = server.accept();
+    auto accepted_client = server.accept_client();
     ASSERT_TRUE(accepted_client.has_value());
 
-    auto received = accepted_client->receive(test_data.size());
+    auto received = accepted_client->receive_result(test_data.size());
     EXPECT_TRUE(received.has_value());
     
     if (received) {
@@ -310,26 +309,26 @@ TEST_F(UnixIntegrationTest, BidirectionalCommunication) {
         std::this_thread::sleep_for(50ms);
         ASSERT_TRUE(client.connect(test_socket).has_value());
         
-        auto sent = client.send(client_data);
+        auto sent = client.send_result(client_data);
         EXPECT_TRUE(sent.has_value());
 
-        auto received = client.receive(2);
+        auto received = client.receive_result(2);
         EXPECT_TRUE(received.has_value());
         if (received) {
             client_received = *received;
         }
     });
 
-    auto accepted_client = server.accept();
+    auto accepted_client = server.accept_client();
     ASSERT_TRUE(accepted_client.has_value());
 
-    auto received = accepted_client->receive(2);
+    auto received = accepted_client->receive_result(2);
     EXPECT_TRUE(received.has_value());
     if (received) {
         server_received = *received;
     }
 
-    auto sent = accepted_client->send(server_data);
+    auto sent = accepted_client->send_result(server_data);
     EXPECT_TRUE(sent.has_value());
 
     client_thread.join();
@@ -354,7 +353,7 @@ TEST_F(UnixIntegrationTest, AbstractNamespace) {
         EXPECT_TRUE(result.has_value());
     });
 
-    auto accepted = abstract_server.accept();
+    auto accepted = abstract_server.accept_client();
     EXPECT_TRUE(accepted.has_value());
 
     client_thread.join();
@@ -375,7 +374,7 @@ TEST_F(UnixIntegrationTest, CredentialPassing) {
         EXPECT_TRUE(result.has_value());
     });
 
-    auto accepted_client = server.accept();
+    auto accepted_client = server.accept_client();
     ASSERT_TRUE(accepted_client.has_value());
 
     auto creds = accepted_client->receive_credentials();

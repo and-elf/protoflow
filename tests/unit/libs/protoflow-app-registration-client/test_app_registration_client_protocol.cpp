@@ -113,7 +113,7 @@ TEST_F(AppRegistrationClientProtocolTest, HandleHelloAckMessage) {
     hello_ack ack{.version = 1};
     
     auto header = protoflow::rpc::make_header(
-        static_cast<uint16_t>(command::hello_ack),
+        static_cast<uint16_t>(request::hello_ack),
         sizeof(ack)
     );
     
@@ -148,7 +148,7 @@ TEST_F(AppRegistrationClientProtocolTest, HandleRegisterAckMessage) {
     };
     
     auto header = protoflow::rpc::make_header(
-        static_cast<uint16_t>(command::register_ack),
+        static_cast<uint16_t>(request::register_ack),
         sizeof(ack)
     );
     
@@ -184,7 +184,7 @@ TEST_F(AppRegistrationClientProtocolTest, HandleRegisterAckWithFailureStatus) {
     };
     
     auto header = protoflow::rpc::make_header(
-        static_cast<uint16_t>(command::register_ack),
+        static_cast<uint16_t>(request::register_ack),
         sizeof(ack)
     );
     
@@ -216,7 +216,7 @@ TEST_F(AppRegistrationClientProtocolTest, HandleHeartbeatAckMessage) {
     // Register successfully
     register_ack reg_ack{.app_id = 1, .status = 0};
     auto reg_header = protoflow::rpc::make_header(
-        static_cast<uint16_t>(command::register_ack),
+        static_cast<uint16_t>(request::register_ack),
         sizeof(reg_ack)
     );
     std::vector<std::byte> reg_data;
@@ -231,7 +231,7 @@ TEST_F(AppRegistrationClientProtocolTest, HandleHeartbeatAckMessage) {
     heartbeat_ack hb_ack{.timestamp = 12345};
     
     auto header = protoflow::rpc::make_header(
-        static_cast<uint16_t>(command::heartbeat_ack),
+        static_cast<uint16_t>(request::heartbeat_ack),
         sizeof(hb_ack)
     );
     
@@ -267,7 +267,7 @@ TEST_F(AppRegistrationClientProtocolTest, HandleErrorMessage) {
     std::strncpy(err.message, "Internal server error", sizeof(err.message) - 1);
     
     auto header = protoflow::rpc::make_header(
-        static_cast<uint16_t>(command::error),
+        static_cast<uint16_t>(request::error),
         sizeof(err)
     );
     
@@ -331,7 +331,7 @@ TEST_F(AppRegistrationClientProtocolTest, HandleVersionMismatch) {
     hello_ack ack{.version = 999};  // Wrong version
     
     auto header = protoflow::rpc::make_header(
-        static_cast<uint16_t>(command::hello_ack),
+        static_cast<uint16_t>(request::hello_ack),
         sizeof(ack)
     );
     
@@ -364,7 +364,7 @@ TEST_F(AppRegistrationClientProtocolTest, IgnoreDataFromWrongConnection) {
     // Create data for wrong connection
     hello_ack ack{.version = 1};
     auto header = protoflow::rpc::make_header(
-        static_cast<uint16_t>(command::hello_ack),
+        static_cast<uint16_t>(request::hello_ack),
         sizeof(ack)
     );
     

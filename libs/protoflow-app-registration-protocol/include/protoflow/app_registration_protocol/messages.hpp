@@ -3,38 +3,41 @@
 #include <cstdint>
 #include <cstddef>
 #include <string_view>
+#include <protoflow/messaging/message.hpp>
 
-namespace protoflow::app_registration_protocol {
-
-/// Application registration protocol commands
-enum class command : uint16_t {
-    hello = 1,
-    hello_ack = 2,
-    register_app = 3,
-    register_ack = 4,
-    heartbeat = 5,
-    heartbeat_ack = 6,
-    render_fragment = 7,
-    fragment_data = 8,
-    get_state = 9,
-    state_json = 10,
-    error = 255
+namespace protoflow::app_registration_protocol { /// Application registration protocol commands 
+enum class request : protoflow::messaging::MessageType {
+     hello = protoflow::messaging::MessageTypes::AppRegistrationRequests
+    , register_app
+    , heartbeat
+    , unregister_app
+    , error
 };
-
-/// Convert command to string for logging
-[[nodiscard]] constexpr std::string_view to_string(command cmd) noexcept {
+enum class response: protoflow::messaging::MessageType {
+     hello_ack = protoflow::messaging::MessageTypes::AppRegistrationResponses
+    , register_ack
+    , heartbeat_ack
+    , unregister_app_ack
+    , error
+};
+/// Convert request to string for logging
+[[nodiscard]] constexpr std::string_view to_string(request cmd) noexcept {
     switch (cmd) {
-        case command::hello: return "hello";
-        case command::hello_ack: return "hello_ack";
-        case command::register_app: return "register_app";
-        case command::register_ack: return "register_ack";
-        case command::heartbeat: return "heartbeat";
-        case command::heartbeat_ack: return "heartbeat_ack";
-        case command::render_fragment: return "render_fragment";
-        case command::fragment_data: return "fragment_data";
-        case command::get_state: return "get_state";
-        case command::state_json: return "state_json";
-        case command::error: return "error";
+        case request::hello: return "hello";
+        case request::register_app: return "register_app";
+        case request::heartbeat: return "heartbeat";
+        case request::error: return "error";
+        default: return "unknown";
+    }
+}
+
+[[nodiscard]] constexpr std::string_view to_string(response cmd) noexcept {
+    switch (cmd) {
+        case response::hello_ack: return "hello_ack";
+        case response::register_ack: return "register_ack";
+        case response::heartbeat_ack: return "heartbeat_ack";
+        case response::unregister_app_ack: return "unregister_app_ack";
+        case response::error: return "error";
         default: return "unknown";
     }
 }

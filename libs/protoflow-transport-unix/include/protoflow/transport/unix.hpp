@@ -7,6 +7,7 @@
 #include <span>
 #include <vector>
 #include <cstddef>
+#include <protoflow/rpc/protocol.hpp>
 #include <sys/un.h>
 
 namespace protoflow::transport::unix {
@@ -41,7 +42,7 @@ struct unix_error {
 };
 
 // Unix socket client for outbound connections
-class unix_client {
+class unix_client : public protoflow::rpc::transport_interface {
 public:
     // Friend declaration for unix_server
     friend class unix_server;
@@ -65,8 +66,15 @@ public:
     [[nodiscard]] connection_state state() const noexcept { return state_; }
 
     // I/O operations
-    [[nodiscard]] std::expected<size_t, unix_error> send(std::span<const std::byte> data);
-    [[nodiscard]] std::expected<std::vector<std::byte>, unix_error> receive(size_t max_bytes);
+    // transport_interface-compatible
+    bool send(std::span<const std::byte> data) override;
+    std::expected<std::vector<std::byte>, std::string> receive(size_t max_bytes) override;
+    // Close transport (transport_interface)
+    void close() override;
+
+    // Backwards-compatible helpers
+    [[nodiscard]] std::expected<size_t, unix_error> send_result(std::span<const std::byte> data);
+    [[nodiscard]] std::expected<std::vector<std::byte>, unix_error> receive_result(size_t max_bytes);
     [[nodiscard]] std::expected<size_t, unix_error> receive_into(std::span<std::byte> buffer);
 
     // Credential passing (Linux-specific)
@@ -98,7 +106,7 @@ private:
 };
 
 // Unix socket server for inbound connections
-class unix_server {
+class unix_server : public protoflow::rpc::transport_interface {
 public:
     unix_server() = default;
     explicit unix_server(const unix_config& config);
@@ -118,7 +126,18 @@ public:
     [[nodiscard]] bool is_listening() const noexcept { return socket_fd_ >= 0; }
 
     // Accept connections
-    [[nodiscard]] std::expected<unix_client, unix_error> accept();
+
+    // transport_interface methods (server)
+    // Server does not support direct send/receive; provide no-op implementations
+    bool send(std::span<const std::byte> /*data*/) override { return false; }
+    std::expected<std::vector<std::byte>, std::string> receive(size_t /*max_bytes*/) override {
+        return std::unexpected(std::string("receive() not supported on server transport"));
+    }
+    [[nodiscard]] std::unique_ptr<protoflow::rpc::transport_interface> accept() override;
+    void close() override { stop(); }
+    bool is_connected() const override { return is_listening(); }
+
+    [[nodiscard]] std::expected<unix_client, unix_error> accept_client();
 
     // Configuration
     [[nodiscard]] const unix_config& config() const noexcept { return config_; }

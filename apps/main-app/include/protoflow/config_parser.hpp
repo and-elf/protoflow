@@ -1,6 +1,5 @@
 #pragma once
 
-#include <runtime.hpp>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -10,8 +9,8 @@
 // Do not construct RPC transport here; runtime will create one if needed.
 namespace protoflow::mainapp {
 
-    Runtime::Config get_config(const std::string& path) {
-        Runtime::Config config;
+    App::Config get_config(const std::string& path) {
+        App::Config config;
 
         auto res = protoflow::config::parse_ini_file(path);
         std::string rpc_server_address;

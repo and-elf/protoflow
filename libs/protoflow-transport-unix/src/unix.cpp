@@ -8,6 +8,8 @@
 #include <cstring>
 #include <poll.h>
 
+#include <protoflow/transport/common.hpp>
+
 namespace protoflow::transport::unix {
 
 // Helper to create unix_error from errno
@@ -169,30 +171,19 @@ void unix_client::disconnect() noexcept {
     state_ = connection_state::disconnected;
 }
 
-std::expected<size_t, unix_error> unix_client::send(std::span<const std::byte> data) {
-    if (state_ != connection_state::connected) {
-        return std::unexpected(make_error("Not connected"));
-    }
 
-    if (data.empty()) {
-        return 0;
-    }
 
-    ssize_t sent = ::send(socket_fd_, data.data(), data.size(), MSG_NOSIGNAL);
-    
-    if (sent < 0) {
-        int err = errno;
-        if (err == EAGAIN) {
-            return std::unexpected(make_error(err, "Send would block"));
-        }
-        state_ = connection_state::error;
-        return std::unexpected(make_error(err, "Send failed"));
-    }
-
-    return static_cast<size_t>(sent);
+std::expected<size_t, unix_error> unix_client::send_result(std::span<const std::byte> data) {
+    return protoflow::transport::detail::send_result_impl<unix_error>(
+        socket_fd_,
+        [this]() { this->state_ = connection_state::error; },
+        [](int err, std::string_view ctx) { return make_error(err, ctx); },
+        [](std::string_view msg) { return make_error(msg); },
+        data
+    );
 }
 
-std::expected<std::vector<std::byte>, unix_error> unix_client::receive(size_t max_bytes) {
+std::expected<std::vector<std::byte>, unix_error> unix_client::receive_result(size_t max_bytes) {
     std::vector<std::byte> buffer(max_bytes);
     auto result = receive_into(buffer);
     
@@ -204,33 +195,25 @@ std::expected<std::vector<std::byte>, unix_error> unix_client::receive(size_t ma
     return buffer;
 }
 
+bool unix_client::send(std::span<const std::byte> data) {
+    auto res = send_result(data);
+        return res.has_value() && *res > 0;
+}
+
+std::expected<std::vector<std::byte>, std::string> unix_client::receive(size_t max_bytes) {
+    auto r = receive_result(max_bytes);
+    if (!r) return std::unexpected(r.error().to_string());
+    return *r;
+}
+
 std::expected<size_t, unix_error> unix_client::receive_into(std::span<std::byte> buffer) {
-    if (state_ != connection_state::connected) {
-        return std::unexpected(make_error("Not connected"));
-    }
-
-    if (buffer.empty()) {
-        return 0;
-    }
-
-    ssize_t received = ::recv(socket_fd_, buffer.data(), buffer.size(), 0);
-    
-    if (received < 0) {
-        int err = errno;
-        if (err == EAGAIN) {
-            return std::unexpected(make_error(err, "Receive would block"));
-        }
-        state_ = connection_state::error;
-        return std::unexpected(make_error(err, "Receive failed"));
-    }
-
-    if (received == 0) {
-        // Connection closed by peer
-        state_ = connection_state::disconnected;
-        return std::unexpected(make_error("Connection closed by peer"));
-    }
-
-    return static_cast<size_t>(received);
+    return protoflow::transport::detail::receive_into_impl<unix_error>(
+        socket_fd_,
+        [this]() { this->state_ = connection_state::disconnected; },
+        [](int err, std::string_view ctx) { return make_error(err, ctx); },
+        [](std::string_view msg) { return make_error(msg); },
+        buffer
+    );
 }
 
 std::expected<void, unix_error> unix_client::send_credentials() {
@@ -446,9 +429,9 @@ void unix_server::stop() noexcept {
     close_socket();
 }
 
-std::expected<unix_client, unix_error> unix_server::accept() {
+std::unique_ptr<protoflow::rpc::transport_interface> unix_server::accept() {
     if (socket_fd_ < 0) {
-        return std::unexpected(make_error("Not listening"));
+        return nullptr;
     }
 
     struct sockaddr_un client_addr{};
@@ -457,7 +440,7 @@ std::expected<unix_client, unix_error> unix_server::accept() {
     int client_fd = ::accept(socket_fd_, reinterpret_cast<struct sockaddr*>(&client_addr), &addr_len);
     
     if (client_fd < 0) {
-        return std::unexpected(make_error(errno, "Accept failed"));
+        return nullptr;
     }
 
     // Create unix_client from accepted socket
@@ -469,11 +452,43 @@ std::expected<unix_client, unix_error> unix_server::accept() {
     // Set options on accepted socket
     if (auto result = client.set_socket_options(); !result) {
         ::close(client_fd);
+        return nullptr;
+    }
+
+    return std::make_unique<unix_client>(std::move(client));
+}
+
+std::expected<unix_client, unix_error> unix_server::accept_client() {
+    if (socket_fd_ < 0) {
+        return std::unexpected(make_error("Not listening"));
+    }
+
+    struct sockaddr_un client_addr{};
+    socklen_t addr_len = sizeof(client_addr);
+
+    int client_fd = ::accept(socket_fd_, reinterpret_cast<struct sockaddr*>(&client_addr), &addr_len);
+    if (client_fd < 0) {
+        return std::unexpected(make_error(errno, "Accept failed"));
+    }
+
+    unix_client client;
+    client.socket_fd_ = client_fd;
+    client.state_ = connection_state::connected;
+    client.config_ = config_;
+
+    if (auto result = client.set_socket_options(); !result) {
+        ::close(client_fd);
         return std::unexpected(result.error());
     }
 
     return client;
 }
+
+void unix_client::close() {
+    disconnect();
+}
+
+// The is_connected method is defined inline in the header, so it can be removed.
 
 void unix_server::close_socket() noexcept {
     if (socket_fd_ >= 0) {

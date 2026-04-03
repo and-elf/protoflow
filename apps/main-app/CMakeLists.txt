@@ -19,7 +19,7 @@ protoflow_add_app(
     
     SOURCES
         src/main.cpp
-        src/runtime.cpp
+        src/app.cpp
         src/services/app_registration_service.cpp
         src/services/hardware_arbitration_service.cpp
         src/services/http_service.cpp

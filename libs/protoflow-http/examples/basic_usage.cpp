@@ -38,7 +38,7 @@ auto get_dashboard() {
             data_row(text("Uptime"), text(std::to_string(status.uptime_seconds) + " seconds")),
             data_row(text("CPU Usage"), text(std::to_string(status.cpu_usage) + "%"))
         )
-    );
+    ).render();
 }
 
 // Example: Handler that returns JSON directly

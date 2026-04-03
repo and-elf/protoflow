@@ -1,12 +1,14 @@
 #pragma once
 
 #include <string>
+#include <protoflow/rpc/protocol.hpp>
 #include <string_view>
 #include <cstdint>
 #include <expected>
 #include <span>
 #include <vector>
 #include <cstddef>
+#include <unistd.h>
 
 namespace protoflow::transport::tcp {
 
@@ -41,13 +43,12 @@ struct tcp_error {
 };
 
 // TCP client for outbound connections
-class tcp_client {
+class tcp_client : public protoflow::rpc::transport_interface {
 public:
-    // Friend declaration for tcp_server
-    friend class tcp_server;
-
-    tcp_client() = default;
+    tcp_client();
     explicit tcp_client(const tcp_config& config);
+    tcp_client(const std::string& host, uint16_t port):
+        config_{.host = host, .port = port} {}
     ~tcp_client();
 
     // Non-copyable, movable
@@ -65,8 +66,15 @@ public:
     [[nodiscard]] connection_state state() const noexcept { return state_; }
 
     // I/O operations
-    [[nodiscard]] std::expected<size_t, tcp_error> send(std::span<const std::byte> data);
-    [[nodiscard]] std::expected<std::vector<std::byte>, tcp_error> receive(size_t max_bytes);
+    // transport_interface-compatible methods
+    bool send(std::span<const std::byte> data) override;
+    std::expected<std::vector<std::byte>, std::string> receive(size_t max_bytes) override;
+    // Close transport (transport_interface)
+    void close() override;
+
+    // Backwards-compatible helpers that expose richer error info
+    [[nodiscard]] std::expected<size_t, tcp_error> send_result(std::span<const std::byte> data);
+    [[nodiscard]] std::expected<std::vector<std::byte>, tcp_error> receive_result(size_t max_bytes);
     [[nodiscard]] std::expected<size_t, tcp_error> receive_into(std::span<std::byte> buffer);
 
     // Configuration
@@ -77,6 +85,8 @@ public:
     [[nodiscard]] int socket_fd() const noexcept { return socket_fd_; }
     [[nodiscard]] std::string peer_address() const;
     [[nodiscard]] uint16_t peer_port() const;
+    // Adopt an existing connected socket (used by servers accepting clients)
+    void adopt_socket(int fd) noexcept;
 
 private:
     void close_socket() noexcept;
@@ -88,9 +98,9 @@ private:
 };
 
 // TCP server for inbound connections
-class tcp_server {
+class tcp_server : public protoflow::rpc::transport_interface {
 public:
-    tcp_server() = default;
+    tcp_server();
     explicit tcp_server(const tcp_config& config);
     ~tcp_server();
 
@@ -107,16 +117,30 @@ public:
     
     [[nodiscard]] bool is_listening() const noexcept { return socket_fd_ >= 0; }
 
-    // Accept connections
-    [[nodiscard]] std::expected<tcp_client, tcp_error> accept();
-
-    // Configuration
+    // Accessors for tests and external use
+    [[nodiscard]] int socket_fd() const noexcept { return socket_fd_; }
     [[nodiscard]] const tcp_config& config() const noexcept { return config_; }
     void set_config(const tcp_config& config) noexcept { config_ = config; }
-
-    // Socket information
-    [[nodiscard]] int socket_fd() const noexcept { return socket_fd_; }
     [[nodiscard]] uint16_t listening_port() const noexcept { return config_.port; }
+
+    // transport_interface methods (server)
+    // Server does not support direct send/receive; provide no-op implementations
+    bool send(std::span<const std::byte> data) override { return ::write(socket_fd_, data.data(), data.size()); }
+    std::expected<std::vector<std::byte>, std::string> receive(size_t max_bytes) override {
+        auto buffer = std::vector<std::byte>(max_bytes);
+        auto data = ::read(socket_fd_, buffer.data(), max_bytes);
+        if (data < 0) {
+            return std::unexpected(std::string("receive() failed"));
+        }
+        buffer.resize(static_cast<size_t>(data));
+        return buffer;
+    }
+    [[nodiscard]] std::unique_ptr<protoflow::rpc::transport_interface> accept() override;
+    void close() override { stop(); }
+    bool is_connected() const override { return is_listening(); }
+
+    // Backwards-compatible accept returning expected client
+    [[nodiscard]] std::expected<tcp_client, tcp_error> accept_client();
 
 private:
     void close_socket() noexcept;
@@ -124,6 +148,7 @@ private:
 
     tcp_config config_;
     int socket_fd_{-1};
+    connection_state state_{connection_state::disconnected};
 };
 
 } // namespace protoflow::transport::tcp

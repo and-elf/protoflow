@@ -10,24 +10,12 @@
 
 namespace protoflow::mainapp {
 
-/// Message type IDs for main-app messages
-namespace MessageTypes {
-    constexpr messaging::MessageType NavigationRequest = 200;
-    constexpr messaging::MessageType NavigationResponse = 201;
-    constexpr messaging::MessageType StateRequest = 202;
-    constexpr messaging::MessageType StateResponse = 203;
-    constexpr messaging::MessageType FragmentRequest = 204;
-    constexpr messaging::MessageType FragmentResponse = 205;
-    constexpr messaging::MessageType AppRegistrationEvent = 206;
-    constexpr messaging::MessageType AppUnregistrationEvent = 207;
-}
 
 /// Message: Notify services when an app is registered
 /// Reuses app_registration_protocol wire format for consistency
 /// Wire format: register_app_msg from protocol library
 struct AppRegistrationEvent {
     std::string app_name;
-    std::string version;
     std::vector<std::string> endpoints;
     
     // Serialize using protocol format
@@ -62,7 +50,6 @@ struct AppRegistrationEvent {
         
         AppRegistrationEvent event;
         event.app_name = msg.name;
-        event.version = "1.0"; // TODO: Add version to protocol
         
         // Parse endpoint strings
         size_t offset = sizeof(msg);
