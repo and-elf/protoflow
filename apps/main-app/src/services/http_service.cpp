@@ -3,85 +3,89 @@
 #include <protoflow/logging/macros.hpp>
 #include <sstream>
 
+
+
 namespace protoflow::mainapp {
 
+// ────────────────────────────────────────────────────────────────
+//  Construction
+// ────────────────────────────────────────────────────────────────
+
+HTTPService::HTTPService()
+    : Service({HttpMessageTypes::HttpRequest})   // subscribe to request events
+{}
+
+// ────────────────────────────────────────────────────────────────
+//  Lifecycle
+// ────────────────────────────────────────────────────────────────
+
 void HTTPService::start() {
-    PROTOFLOW_LOG_INFO(*this, "Starting HTTP server on " 
-                       << listen_address_ << ":" << port_);
-    
+    PROTOFLOW_LOG_INFO(*this, "Starting HTTPService (event-driven)");
+
     running_ = true;
-    
+
     // Register built-in endpoints
     register_endpoint("GET", "/", [this](const HttpRequest& req) {
         return serve_home(req);
     });
-    
+
     register_endpoint("GET", "/api/state", [this](const HttpRequest& req) {
         return serve_state_api(req);
     });
-    
-    // Register wildcard app endpoint handler
+
     register_endpoint("GET", "/app/*", [this](const HttpRequest& req) {
         return serve_app_endpoint(req);
     });
-    
+
     PROTOFLOW_LOG_INFO(*this, "Registered " << endpoints_.size() << " endpoints");
-    PROTOFLOW_LOG_INFO(*this, "HTTP server started");
+    PROTOFLOW_LOG_INFO(*this, "HTTPService started");
 }
 
 void HTTPService::stop() {
-    PROTOFLOW_LOG_INFO(*this, "Stopping HTTP server");
+    PROTOFLOW_LOG_INFO(*this, "Stopping HTTPService");
     running_ = false;
 }
 
 void HTTPService::poll() {
     if (!running_) return;
-    
-    // Check for timed out requests
+
+    // Check for timed-out pending requests
     auto now = std::chrono::steady_clock::now();
     std::vector<uint64_t> timed_out_ids;
-    
+
     for (const auto& [req_id, pending] : pending_requests_) {
-        auto elapsed = now - pending.timestamp;
-        
-        if (elapsed >= REQUEST_TIMEOUT) {
+        if (now - pending.timestamp >= REQUEST_TIMEOUT)
             timed_out_ids.push_back(req_id);
-        }
     }
-    
-    // Remove timed out requests and send error responses
+
     for (uint64_t req_id : timed_out_ids) {
         auto it = pending_requests_.find(req_id);
         if (it != pending_requests_.end()) {
             auto elapsed = now - it->second.timestamp;
-            
-            PROTOFLOW_LOG_WARN(*this, "Request #" << req_id 
-                              << " timed out after " 
-                              << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() 
+            PROTOFLOW_LOG_WARN(*this, "Request #" << req_id
+                              << " timed out after "
+                              << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()
                               << "ms");
-            
+
             HttpResponse timeout_response;
             timeout_response.status_code = 504;
             timeout_response.set_json(R"({"error": "Request timed out waiting for service response"})");
             pending_responses_.push_back(std::move(timeout_response));
-            
+
             pending_requests_.erase(it);
         }
     }
-    
-    // In a full implementation:
-    // 1. Accept incoming connections
-    // 2. Parse HTTP requests
-    // 3. Route to appropriate handlers
-    // 4. Send HTTP responses from pending_responses_
-    
-    // For now, this is a placeholder that would integrate with an actual HTTP server
-    
+
+    // Let the base class drain inbound queue → handle()
     service::Service::poll();
 }
 
-void HTTPService::register_endpoint(const std::string& method, 
-                                    const std::string& path, 
+// ────────────────────────────────────────────────────────────────
+//  Endpoint registry
+// ────────────────────────────────────────────────────────────────
+
+void HTTPService::register_endpoint(const std::string& method,
+                                    const std::string& path,
                                     HttpHandler handler) {
     std::string key = method + " " + path;
     endpoints_[key] = std::move(handler);
@@ -89,39 +93,82 @@ void HTTPService::register_endpoint(const std::string& method,
 
 HttpResponse HTTPService::handle_request(const HttpRequest& request) {
     std::string key = request.method + " " + request.path;
-    
-    // Try exact match first
+
+    // Exact match
     auto it = endpoints_.find(key);
-    if (it != endpoints_.end()) {
-        return it->second(request);
-    }
-    
-    // Try wildcard match
+    if (it != endpoints_.end()) return it->second(request);
+
+    // Wildcard match
     for (const auto& [pattern, handler] : endpoints_) {
         if (pattern.find('*') != std::string::npos) {
-            // Simple wildcard matching
             std::string prefix = pattern.substr(0, pattern.find('*'));
             std::string method_prefix = request.method + " " + prefix;
-            
-            if (key.starts_with(method_prefix)) {
-                return handler(request);
-            }
+            if (key.starts_with(method_prefix)) return handler(request);
         }
     }
-    
-    // Not found
+
     HttpResponse response;
     response.status_code = 404;
     response.set_html("<html><body><h1>404 Not Found</h1></body></html>");
     return response;
 }
 
+// ────────────────────────────────────────────────────────────────
+//  Event handling (message bus)
+// ────────────────────────────────────────────────────────────────
+
+void HTTPService::handle(service::Message&& msg) {
+    if (msg.type() != HttpMessageTypes::HttpRequest) {
+        PROTOFLOW_LOG_DEBUG(*this, "Ignoring unexpected message type " << msg.type());
+        return;
+    }
+
+    auto ev = HttpRequestEvent::deserialize(msg.bytes());
+    if (!ev) {
+        PROTOFLOW_LOG_WARN(*this, "Failed to deserialize HttpRequestEvent");
+        return;
+    }
+
+    // Convert event → internal HttpRequest
+    HttpRequest hreq;
+    hreq.method  = std::move(ev->method);
+    hreq.path    = std::move(ev->path);
+    hreq.headers = std::move(ev->headers);
+    hreq.body    = std::move(ev->body);
+
+    // Route through endpoint handlers
+    HttpResponse hres = handle_request(hreq);
+
+    // Convert internal HttpResponse → HttpResponseEvent → Message
+    HttpResponseEvent resp_ev;
+    resp_ev.connection_id = ev->connection_id;
+    resp_ev.status_code   = hres.status_code;
+    resp_ev.headers       = std::move(hres.headers);
+    resp_ev.body          = std::move(hres.body);
+
+    auto payload = resp_ev.serialize();
+    auto resp_msg = messaging::MessageBuilder{}
+        .from(service_id_)
+        .type(HttpMessageTypes::HttpResponse)
+        .payload(std::move(payload))
+        .build();
+
+    write(std::move(resp_msg));
+}
+
+std::vector<service::Message> HTTPService::generate_outbound() {
+    // Responses are queued via write() in handle(), nothing extra needed.
+    return {};
+}
+
+// ────────────────────────────────────────────────────────────────
+//  Built-in page handlers
+// ────────────────────────────────────────────────────────────────
+
 HttpResponse HTTPService::serve_home(const HttpRequest& request) {
     (void)request;
-        (void)request;
 
-        // Simple fallback HTML for now (replace with html-fragment usage later)
-        std::string html = R"(<!doctype html>
+    std::string html = R"(<!doctype html>
 <html>
     <head>
         <meta charset="utf-8" />
@@ -141,19 +188,14 @@ HttpResponse HTTPService::serve_home(const HttpRequest& request) {
     </body>
 </html>)";
 
-        HttpResponse response;
-        response.set_html(html);
-        return response;
+    HttpResponse response;
+    response.set_html(html);
+    return response;
 }
 
 HttpResponse HTTPService::serve_app_endpoint(const HttpRequest& request) {
     (void)request;
-    // Parse app name and endpoint from path
-    // Format: /app/{app_name}/{endpoint}
-    
-    // TODO: Send FragmentRequest message to AppRegistrationService
-    // and wait for FragmentResponse
-    
+
     HttpResponse response;
     response.status_code = 404;
     response.set_html("<html><body><h1>404 Not Found</h1><p>App or endpoint not found</p></body></html>");
@@ -162,15 +204,10 @@ HttpResponse HTTPService::serve_app_endpoint(const HttpRequest& request) {
 
 HttpResponse HTTPService::serve_state_api(const HttpRequest& request) {
     HttpResponse response;
-    
-    // TODO: Send StateRequest message to AppRegistrationService
-    // and wait for StateResponse
-    
+
     if (accepts_json(request) || !accepts_html(request)) {
-        // Return JSON
         response.set_json(R"({"error": "Not yet implemented - requires message-based communication"})");
     } else {
-        // Return HTML representation (simple fallback)
         std::string html = R"(<!doctype html>
 <html>
   <head><meta charset="utf-8"/><title>System State</title></head>
@@ -179,52 +216,27 @@ HttpResponse HTTPService::serve_state_api(const HttpRequest& request) {
     <pre>Not yet implemented - requires message-based communication</pre>
   </body>
 </html>)";
-
         response.set_html(html);
     }
-    
+
     return response;
 }
 
-void HTTPService::handle(service::Message&& msg) {
-    PROTOFLOW_LOG_DEBUG(*this, "Received message: type=" << msg.type() 
-                      << ", size=" << msg.size() << " bytes");
-    
-    // Dispatch based on MessageType by casting raw bytes
-    // switch (msg.type()) {
-
-        
-    //     default:
-    //         PROTOFLOW_LOG_WARN(*this, "Unknown message type: " << msg.type());
-    //         break;
-    // }
-}
-
-std::vector<service::Message> HTTPService::generate_outbound() {
-    std::vector<service::Message> messages;
-    
-    // In a full implementation, this would generate request messages
-    // based on incoming HTTP requests that need data from other services
-    // Messages would be serialized to bytes with appropriate MessageType
-    
-    return messages;
-}
+// ────────────────────────────────────────────────────────────────
+//  App registration / unregistration handlers
+// ────────────────────────────────────────────────────────────────
 
 void HTTPService::handle_app_registration(const AppRegistrationEvent& event) {
-    PROTOFLOW_LOG_INFO(*this, "App registered: " << event.app_name 
+    PROTOFLOW_LOG_INFO(*this, "App registered: " << event.app_name
                       << " with " << event.endpoints.size() << " endpoints");
-    
-    // Dynamically register endpoints for this app
+
     for (const auto& endpoint : event.endpoints) {
         std::string path = "/app/" + event.app_name + "/" + endpoint;
-        
+
         PROTOFLOW_LOG_INFO(*this, "  Registering endpoint: GET " << path);
-        
+
         register_endpoint("GET", path, [this, app_name = event.app_name, endpoint](const HttpRequest& req) {
-            // This handler will be called when the endpoint is requested
             (void)req;
-            // It should send a FragmentRequest to the AppRegistrationService
-            // For now, return a placeholder
             HttpResponse response;
             response.status_code = 503;
             response.set_html("<html><body><h1>Service Unavailable</h1>"
@@ -232,45 +244,43 @@ void HTTPService::handle_app_registration(const AppRegistrationEvent& event) {
             return response;
         });
     }
-    
-    // Track registered apps for cleanup
+
     registered_apps_[event.app_name] = event.endpoints;
 }
 
 void HTTPService::handle_app_unregistration(const AppUnregistrationEvent& event) {
     PROTOFLOW_LOG_INFO(*this, "App unregistered: " << event.app_name);
-    
-    // Remove endpoints for this app
+
     auto it = registered_apps_.find(event.app_name);
     if (it != registered_apps_.end()) {
         for (const auto& endpoint : it->second) {
             std::string path = "/app/" + event.app_name + "/" + endpoint;
             std::string key = "GET " + path;
-            
-            auto endpoint_it = endpoints_.find(key);
-            if (endpoint_it != endpoints_.end()) {
+            auto eit = endpoints_.find(key);
+            if (eit != endpoints_.end()) {
                 PROTOFLOW_LOG_INFO(*this, "  Unregistering endpoint: " << key);
-                endpoints_.erase(endpoint_it);
+                endpoints_.erase(eit);
             }
         }
-        
         registered_apps_.erase(it);
     }
 }
 
+// ────────────────────────────────────────────────────────────────
+//  Content negotiation helpers
+// ────────────────────────────────────────────────────────────────
+
 bool HTTPService::accepts_html(const HttpRequest& request) const {
     auto it = request.headers.find("Accept");
-    if (it != request.headers.end()) {
+    if (it != request.headers.end())
         return it->second.find("text/html") != std::string::npos;
-    }
     return false;
 }
 
 bool HTTPService::accepts_json(const HttpRequest& request) const {
     auto it = request.headers.find("Accept");
-    if (it != request.headers.end()) {
+    if (it != request.headers.end())
         return it->second.find("application/json") != std::string::npos;
-    }
     return false;
 }
 

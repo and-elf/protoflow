@@ -23,6 +23,7 @@ protoflow_add_app(
         src/services/app_registration_service.cpp
         src/services/hardware_arbitration_service.cpp
         src/services/http_service.cpp
+        src/services/http_listener_service.cpp
         src/services/rpc_server_service.cpp
     
     LINK_LIBRARIES

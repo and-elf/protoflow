@@ -14,7 +14,7 @@
 
 namespace protoflow::mainapp {
 
-/// HTTP request context
+/// HTTP request context (internal representation used by endpoint handlers)
 struct HttpRequest {
     std::string method;
     std::string path;
@@ -22,7 +22,7 @@ struct HttpRequest {
     std::vector<std::byte> body;
 };
 
-/// HTTP response
+/// HTTP response (internal representation produced by endpoint handlers)
 struct HttpResponse {
     int status_code = 200;
     std::unordered_map<std::string, std::string> headers;
@@ -44,11 +44,15 @@ struct HttpResponse {
 /// HTTP endpoint handler type
 using HttpHandler = std::function<HttpResponse(const HttpRequest&)>;
 
-/// Service providing HTTP server functionality
-/// Aggregates UI fragments and serves JSON API
+/// Event-driven HTTP routing service.
+/// Receives HttpRequestEvent messages (from HttpListenerService),
+/// dispatches them through registered endpoint handlers, and emits
+/// HttpResponseEvent messages back.
+/// Does NOT own any network sockets.
 class HTTPService : public service::Service {
 public:
-    HTTPService() = default;
+    /// Default constructor – subscribes to HttpRequest events.
+    HTTPService();
 
     void start() override;
     void stop() override;
@@ -96,8 +100,6 @@ private:
         std::chrono::steady_clock::time_point timestamp;
     };
 
-    std::string listen_address_;
-    uint16_t port_;
     bool running_ = false;
     
     // Endpoint registry

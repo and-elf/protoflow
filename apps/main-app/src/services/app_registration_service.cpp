@@ -197,10 +197,12 @@ void AppRegistrationService::handle(messaging::Message&& msg) {
                 .build());
             break;
         case request::unregister_app:
-            PROTOFLOW_LOG_INFO(*this, "Received message type: " << msg.type()
-                              << ", size: " << msg.size() << " bytes");
-            // For simplicity, we will not implement full deserialization here
-            // In a complete implementation, we would parse the message bytes into the appropriate event struct and call the corresponding handler
+            if (auto ev = AppUnregistrationEvent::deserialize(msg.bytes())) {
+                PROTOFLOW_LOG_INFO(*this, "Unregister request for: " << ev->app_name);
+                unregister_app(ev->app_name);
+            } else {
+                PROTOFLOW_LOG_WARN(*this, "Failed to deserialize AppUnregistrationEvent from message");
+            }
             break;
         case request::error:
             PROTOFLOW_LOG_WARN(*this, "Received unsupported message type: " << msg.type());

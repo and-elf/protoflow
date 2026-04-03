@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include "../../apps/main-app/include/services/http_service.hpp"
-#include "../../apps/main-app/include/messages.hpp"
+#include "../../apps/main-app/include/protoflow/messages.hpp"
 #include <protoflow/logging/logging_service.hpp>
 #include <thread>
 #include <chrono>
@@ -12,7 +12,7 @@ using namespace std::chrono_literals;
 class HTTPServiceTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        http_service = std::make_unique<HTTPService>("127.0.0.1", 8080);
+        http_service = std::make_unique<HTTPService>();
         logging_service = std::make_unique<LoggingService>();
         
         http_service->start();

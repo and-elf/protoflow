@@ -2,6 +2,7 @@
 #include "services/app_registration_service.hpp"
 #include "services/hardware_arbitration_service.hpp"
 #include "services/http_service.hpp"
+#include "services/http_listener_service.hpp"
 #include "services/rpc_server_service.hpp"
 
 #include <protoflow/config/hardware_config.hpp>
@@ -93,14 +94,16 @@ bool App::initialize() {
     }
 
     if (config_.enable_http) {
-        std::cout << "    * HTTPService (listening on " 
-                  << config_.listen_address << ":" 
-                  << config_.listen_port << ")\n";
-        auto http_service = std::make_unique<HTTPService>(
-            config_.listen_address,
-            config_.listen_port
-        );
+        std::cout << "    * HTTPService (event-driven)\n";
+        auto http_service = std::make_unique<HTTPService>();
         services_.push_back(std::move(http_service));
+
+        std::cout << "    * HttpListenerService (listening on "
+                  << config_.listen_address << ":"
+                  << config_.listen_port << ")\n";
+        auto listener = std::make_unique<HttpListenerService>(
+            config_.listen_address, config_.listen_port);
+        services_.push_back(std::move(listener));
     }
 
     // Initialize RPC server service if a transport is provided in config
