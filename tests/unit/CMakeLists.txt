@@ -11,6 +11,7 @@ if(BUILD_FSM_TABLE)
     add_subdirectory(libs/protoflow-fsm-table)
 endif()
 
+add_subdirectory(libs/protoflow-config)
 add_subdirectory(libs/protoflow-html-fragment)
 add_subdirectory(libs/protoflow-http)
 

@@ -11,6 +11,7 @@ protoflow_add_library(
         src/ini_parser.cpp
         src/hardware_config.cpp
         src/logging_config.cpp
+        src/config_paths.cpp
     
     PUBLIC_INCLUDE_DIRS
         include
