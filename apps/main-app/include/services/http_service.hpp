@@ -79,6 +79,10 @@ private:
     /// Serve app endpoint (proxy to registered app)
     HttpResponse serve_app_endpoint(const HttpRequest& request);
 
+    /// Serve a fragment from a registered app (via html-fragment library)
+    HttpResponse serve_fragment(const std::string& app_name,
+                                const std::string& fragment_id);
+
     /// Serve aggregated state API
     HttpResponse serve_state_api(const HttpRequest& request);
 

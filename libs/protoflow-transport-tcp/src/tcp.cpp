@@ -297,13 +297,36 @@ std::expected<void, tcp_error> tcp_server::listen() {
         return std::unexpected(make_error(err, "Listen failed"));
     }
 
+    // Set non-blocking so accept() returns immediately when no pending connections
+    int flags = fcntl(socket_fd_, F_GETFL, 0);
+    if (flags >= 0) {
+        fcntl(socket_fd_, F_SETFL, flags | O_NONBLOCK);
+    }
+
     return {};
 }
 
 std::unique_ptr<protoflow::rpc::transport_interface> tcp_server::accept() {
-    auto res = accept_client();
-    if (!res) return nullptr;
-    return std::make_unique<tcp_client>(std::move(*res));
+    // Non-blocking accept for event loop use: poll with 0ms timeout
+    if (socket_fd_ < 0) return nullptr;
+
+    struct pollfd pfd{};
+    pfd.fd = socket_fd_;
+    pfd.events = POLLIN;
+
+    int poll_result = ::poll(&pfd, 1, 0);  // non-blocking check
+    if (poll_result <= 0) return nullptr;
+
+    struct sockaddr_in client_addr{};
+    socklen_t addr_len = sizeof(client_addr);
+
+    int client_fd = ::accept(socket_fd_, reinterpret_cast<struct sockaddr*>(&client_addr), &addr_len);
+    if (client_fd < 0) return nullptr;
+
+    tcp_config client_config = config_;
+    auto client = std::make_unique<tcp_client>(client_config);
+    client->adopt_socket(client_fd);
+    return client;
 }
 
 std::expected<tcp_client, tcp_error> tcp_server::accept_client() {
@@ -311,11 +334,29 @@ std::expected<tcp_client, tcp_error> tcp_server::accept_client() {
         return std::unexpected(make_error("Not listening"));
     }
 
+    // Use poll() to wait for a pending connection with timeout.
+    // This handles both blocking and non-blocking sockets correctly.
+    struct pollfd pfd{};
+    pfd.fd = socket_fd_;
+    pfd.events = POLLIN;
+
+    int poll_result = ::poll(&pfd, 1, static_cast<int>(config_.connect_timeout_ms));
+    if (poll_result < 0) {
+        return std::unexpected(make_error(errno, "Poll failed"));
+    }
+    if (poll_result == 0) {
+        return std::unexpected(make_error("No pending connections"));
+    }
+
     struct sockaddr_in client_addr{};
     socklen_t addr_len = sizeof(client_addr);
 
     int client_fd = ::accept(socket_fd_, reinterpret_cast<struct sockaddr*>(&client_addr), &addr_len);
     if (client_fd < 0) {
+        // EAGAIN/EWOULDBLOCK means no pending connections (non-blocking socket)
+        if (errno == EAGAIN) {
+            return std::unexpected(make_error(errno, "No pending connections"));
+        }
         return std::unexpected(make_error(errno, "Accept failed"));
     }
 

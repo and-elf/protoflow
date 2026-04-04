@@ -11,3 +11,4 @@
 #include <protoflow/html/tag.hpp>
 #include <protoflow/html/attrs.hpp>
 #include <protoflow/html/render_ctx.hpp>
+#include <protoflow/html/components.hpp>

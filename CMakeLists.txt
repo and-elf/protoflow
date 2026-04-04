@@ -46,6 +46,7 @@ option(PROTOFLOW_BUILD_HW_CLIENT "Build protoflow-hw-client library" ON)
 option(PROTOFLOW_BUILD_APP_REGISTRATION_PROTOCOL "Build protoflow-app-registration-protocol library" ON)
 option(PROTOFLOW_BUILD_APP_REGISTRATION_CLIENT "Build protoflow-app-registration-client library" ON)
 option(PROTOFLOW_BUILD_MAIN_APP "Build main application" ON)
+option(PROTOFLOW_BUILD_SKELETON_APP "Build skeleton client application" ON)
 
 # Include CMake modules
 include(CompilerWarnings)
@@ -148,6 +149,10 @@ if(PROTOFLOW_BUILD_MAIN_APP)
     add_subdirectory(apps/main-app)
 endif()
 
+if(PROTOFLOW_BUILD_SKELETON_APP)
+    add_subdirectory(apps/skeleton-app)
+endif()
+
 # Tests
 if(PROTOFLOW_ENABLE_TESTING)
     add_subdirectory(tests)
@@ -207,4 +212,5 @@ message(STATUS "  app-registration-client: ${PROTOFLOW_BUILD_APP_REGISTRATION_CL
 message(STATUS "")
 message(STATUS "Applications:")
 message(STATUS "  main-app:              ${PROTOFLOW_BUILD_MAIN_APP}")
+message(STATUS "  skeleton-app:          ${PROTOFLOW_BUILD_SKELETON_APP}")
 message(STATUS "")

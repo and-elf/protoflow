@@ -70,3 +70,25 @@ target_compile_definitions(test_main_app_blackbox
 )
 
 gtest_discover_tests(test_main_app_blackbox)
+
+# Client ↔ Server integration test: spawn main app and skeleton app,
+# verify they connect, communicate, and shut down cleanly.
+if(PROTOFLOW_BUILD_SKELETON_APP AND PROTOFLOW_BUILD_MAIN_APP)
+    add_executable(test_client_server
+        test_client_server.cpp
+    )
+
+    target_link_libraries(test_client_server
+        PRIVATE
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    target_compile_definitions(test_client_server
+        PRIVATE
+            MAIN_APP_EXECUTABLE="$<TARGET_FILE:protoflow-main-app>"
+            SKELETON_APP_EXECUTABLE="$<TARGET_FILE:protoflow-skeleton-app>"
+    )
+
+    gtest_discover_tests(test_client_server)
+endif()

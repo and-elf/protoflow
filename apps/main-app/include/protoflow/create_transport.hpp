@@ -20,11 +20,21 @@ std::unique_ptr<protoflow::rpc::transport_interface> create_server_transport(
         protoflow::transport::tcp::tcp_config cfg{};
         cfg.host = address;
         cfg.port = *port;
-        return std::make_unique<protoflow::transport::tcp::tcp_server>(cfg);
+        auto server = std::make_unique<protoflow::transport::tcp::tcp_server>(cfg);
+        auto result = server->listen();
+        if (!result) {
+            throw std::runtime_error("Failed to listen on TCP " + address + ":" + std::to_string(*port) + ": " + result.error().message);
+        }
+        return server;
     } else if (type == "unix") {
         protoflow::transport::unix::unix_config cfg{};
         cfg.socket_path = address;
-        return std::make_unique<protoflow::transport::unix::unix_server>(cfg);
+        auto server = std::make_unique<protoflow::transport::unix::unix_server>(cfg);
+        auto result = server->listen();
+        if (!result) {
+            throw std::runtime_error("Failed to listen on Unix socket " + address + ": " + result.error().message);
+        }
+        return server;
     } else {
         throw std::invalid_argument("Unsupported transport type: " + type);
     }
