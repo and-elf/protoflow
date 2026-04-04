@@ -3,18 +3,18 @@
 function(enable_sanitizers)
     set(SANITIZER_FLAGS "")
 
-    if(ENABLE_SANITIZER_ADDRESS)
+    if(PROTOFLOW_ENABLE_SANITIZER_ADDRESS)
         list(APPEND SANITIZER_FLAGS "-fsanitize=address")
         message(STATUS "Address Sanitizer enabled")
     endif()
 
-    if(ENABLE_SANITIZER_UB)
+    if(PROTOFLOW_ENABLE_SANITIZER_UB)
         list(APPEND SANITIZER_FLAGS "-fsanitize=undefined")
         message(STATUS "Undefined Behavior Sanitizer enabled")
     endif()
 
-    if(ENABLE_SANITIZER_THREAD)
-        if(ENABLE_SANITIZER_ADDRESS)
+    if(PROTOFLOW_ENABLE_SANITIZER_THREAD)
+        if(PROTOFLOW_ENABLE_SANITIZER_ADDRESS)
             message(FATAL_ERROR "Cannot enable both Address and Thread sanitizers")
         endif()
         list(APPEND SANITIZER_FLAGS "-fsanitize=thread")

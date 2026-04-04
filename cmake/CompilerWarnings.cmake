@@ -28,7 +28,7 @@ function(set_project_warnings)
         -Wuseless-cast
     )
 
-    if(ENABLE_WARNINGS_AS_ERRORS)
+    if(PROTOFLOW_ENABLE_WARNINGS_AS_ERRORS)
         list(APPEND CLANG_WARNINGS -Werror)
         list(APPEND GCC_WARNINGS -Werror)
     endif()

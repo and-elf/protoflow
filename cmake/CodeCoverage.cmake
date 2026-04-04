@@ -1,6 +1,6 @@
 # Code coverage support using gcov/lcov
 
-if(ENABLE_COVERAGE)
+if(PROTOFLOW_ENABLE_COVERAGE)
     if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         message(WARNING "Code coverage works best with Debug build type")
     endif()
