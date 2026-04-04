@@ -77,8 +77,12 @@ public:
         return registered_apps_info_;
     }
 
-    const std::string& get_static_dir() const {
+    const std::filesystem::path& get_static_dir() const {
         return static_dir_;
+    }
+
+    void set_static_dir(const std::filesystem::path& dir) {
+        static_dir_ = dir;
     }
 
 protected:
@@ -108,7 +112,7 @@ private:
     };
 
     bool running_ = false;
-    std::string static_dir_;  // Path to static files directory
+    std::filesystem::path static_dir_;  // Path to static files directory
     
     // Endpoint registry
     std::unordered_map<std::string, HttpHandler> endpoints_;

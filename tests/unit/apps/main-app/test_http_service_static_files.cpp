@@ -60,7 +60,7 @@ TEST_F(HttpServiceStaticFilesTest, ServeStaticJsonFile) {
     req.headers = create_headers("application/json");
 
     // Manually set the static directory for testing
-    service_->static_dir_ = test_static_dir_.string();
+    service_->set_static_dir(test_static_dir_);
 
     // Act
     auto response = service_->handle_request(req);
@@ -75,7 +75,7 @@ TEST_F(HttpServiceStaticFilesTest, ServeStaticJsonFile) {
 
 // Test 2: Verify different content types are set correctly
 TEST_F(HttpServiceStaticFilesTest, ContentTypesForDifferentExtensions) {
-    service_->static_dir_ = test_static_dir_.string();
+    service_->set_static_dir(test_static_dir_.string());
 
     // Test CSS
     {
@@ -115,7 +115,7 @@ TEST_F(HttpServiceStaticFilesTest, Return404ForMissingFile) {
     req.method = "GET";
     req.path = "/static/nonexistent.txt";
 
-    service_->static_dir_ = test_static_dir_.string();
+    service_->set_static_dir(test_static_dir_.string());
 
     // Act
     auto response = service_->handle_request(req);
@@ -133,7 +133,7 @@ TEST_F(HttpServiceStaticFilesTest, RejectPathTraversal) {
     req.method = "GET";
     req.path = "/static/../../../etc/passwd";
 
-    service_->static_dir_ = test_static_dir_.string();
+    service_->set_static_dir(test_static_dir_.string());
 
     // Act
     auto response = service_->handle_request(req);
@@ -147,7 +147,7 @@ TEST_F(HttpServiceStaticFilesTest, WildcardRoutingMatchesStaticPath) {
     // The HTTPService should route requests to /static/* to the static handler
     // This test verifies that the routing actually works
     
-    service_->static_dir_ = test_static_dir_.string();
+    service_->set_static_dir(test_static_dir_.string());
     service_->start();
 
     // Arrange
@@ -171,7 +171,7 @@ TEST_F(HttpServiceStaticFilesTest, RejectEmptyFilename) {
     req.method = "GET";
     req.path = "/static/";
 
-    service_->static_dir_ = test_static_dir_.string();
+    service_->set_static_dir(test_static_dir_);
 
     // Act
     auto response = service_->handle_request(req);
@@ -187,7 +187,7 @@ TEST_F(HttpServiceStaticFilesTest, RejectInvalidStaticPath) {
     req.method = "GET";
     req.path = "/api/data";  // Not a /static/* path
 
-    service_->static_dir_ = test_static_dir_.string();
+    service_->set_static_dir(test_static_dir_);
 
     // This test is about the security check in handle_static
     // It should reject paths that don't start with /static/
@@ -205,7 +205,7 @@ TEST_F(HttpServiceStaticFilesTest, HandleEmptyStaticDirectory) {
     req.path = "/static/style.json";
 
     // Set static dir to empty (as it would be if not found)
-    service_->static_dir_ = "";
+    service_->set_static_dir("");
 
     // Act - should not crash
     auto response = service_->handle_request(req);

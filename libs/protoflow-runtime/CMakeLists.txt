@@ -1,15 +1,13 @@
 # protoflow-runtime library
-# Core runtime, message router, and scheduler
+# Core runtime and application base
 
 protoflow_add_library(
     NAME runtime
     VERSION ${PROJECT_VERSION}
-    DESCRIPTION "Core runtime, message router, and scheduler"
+    DESCRIPTION "Core runtime and application base"
     TYPE STATIC
     
     SOURCES
-        src/runtime.cpp
-        src/scheduler.cpp
         src/app_base.cpp
     
     PUBLIC_INCLUDE_DIRS
