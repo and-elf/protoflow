@@ -2,6 +2,7 @@
 #include <protoflow/messages.hpp>
 #include <protoflow/logging/macros.hpp>
 #include <sstream>
+#include <nlohmann/json.hpp>
 
 
 
@@ -31,6 +32,14 @@ void HTTPService::start() {
 
     register_endpoint("GET", "/api/state", [this](const HttpRequest& req) {
         return serve_state_api(req);
+    });
+
+    register_endpoint("GET", "/status", [this](const HttpRequest& req) {
+        return serve_status(req);
+    });
+
+    register_endpoint("GET", "/api/status", [this](const HttpRequest& req) {
+        return serve_status_async(req);
     });
 
     register_endpoint("GET", "/app/*", [this](const HttpRequest& req) {
@@ -490,6 +499,78 @@ HttpResponse HTTPService::serve_state_api(const HttpRequest& request) {
     return response;
 }
 
+std::string HTTPService::fetch_app_status(const std::string& app_name,
+                                          const std::string& base_url) {
+    // For now, return a placeholder that indicates we tried to fetch from the app
+    // In a full implementation, this would make an HTTP GET request to base_url/status
+    // and parse the response
+    PROTOFLOW_LOG_DEBUG(*this, "Would fetch status from " << app_name
+                       << " at " << base_url << "/status");
+    return "{}";
+}
+
+HttpResponse HTTPService::serve_status_async(const HttpRequest& /*request*/) {
+    HttpResponse response;
+
+    // Build JSON response with data from registered apps
+    std::string json = R"({"status":"running","registered_apps":[)";
+    bool first = true;
+    for (const auto& [name, info] : registered_apps_info_) {
+        if (!first) json += ",";
+        
+        // Escape app name for JSON
+        std::string escaped_name = name;
+        size_t pos = 0;
+        while ((pos = escaped_name.find('"', pos)) != std::string::npos) {
+            escaped_name.replace(pos, 1, "\\\"");
+            pos += 2;
+        }
+        
+        // Try to fetch app-specific status
+        // For now, just include what we know from registration
+        json += R"({"name":")"
+                + escaped_name
+                + R"(","endpoints":)"
+                + std::to_string(info.endpoints.size())
+                + R"(,"http_listener":")"
+                + info.http_listener
+                + "\"}";
+        first = false;
+    }
+    json += R"(],"timestamp":""})";
+
+    response.set_json(json);
+    return response;
+}
+
+HttpResponse HTTPService::serve_status(const HttpRequest& /*request*/) {
+    HttpResponse response;
+
+    // Build JSON response
+    std::string json = R"({"status":"running","registered_apps":[)";
+    bool first = true;
+    for (const auto& [name, endpoints] : registered_apps_) {
+        if (!first) json += ",";
+        // Escape app name for JSON
+        std::string escaped_name = name;
+        // Simple escape: replace quotes with escaped quotes
+        size_t pos = 0;
+        while ((pos = escaped_name.find('"', pos)) != std::string::npos) {
+            escaped_name.replace(pos, 1, "\\\"");
+            pos += 2;
+        }
+        json += R"({"name":")"
+                + escaped_name + R"(","endpoints":)"  
+                + std::to_string(endpoints.size())
+                + "}";
+        first = false;
+    }
+    json += R"(],"timestamp":""})";
+
+    response.set_json(json);
+    return response;
+}
+
 // ────────────────────────────────────────────────────────────────
 //  App registration / unregistration handlers
 // ────────────────────────────────────────────────────────────────
@@ -501,11 +582,40 @@ void HTTPService::handle_app_registration(const AppRegistrationEvent& event) {
     // Track the app and its endpoints; the wildcard /app/* handler
     // (serve_app_endpoint) routes fragment and overview requests.
     registered_apps_[event.app_name] = event.endpoints;
+    
+    // Try to extract HTTP listener URL from the first endpoint if available
+    // Endpoints format can be: "http://localhost:8080", "/api/data", etc.
+    std::string http_listener;
+    for (const auto& ep : event.endpoints) {
+        if (ep.find("http://") == 0 || ep.find("https://") == 0) {
+            // Extract base URL (scheme + host + port)
+            size_t slash_pos = ep.find('/', 8);  // Skip "https://"
+            if (slash_pos != std::string::npos) {
+                http_listener = ep.substr(0, slash_pos);
+            } else {
+                http_listener = ep;
+            }
+            break;
+        }
+    }
+    
+    // If no HTTP endpoint found but we have endpoints, assume localhost
+    // This is a heuristic - in production, apps would register their HTTP listener explicitly
+    if (http_listener.empty() && !event.endpoints.empty()) {
+        // Default assumption: apps likely listen on localhost with sequential ports
+        // starting from 8081 (8080 is main app)
+        PROTOFLOW_LOG_WARN(*this, "App " << event.app_name 
+                          << " did not register HTTP listener URL");
+        http_listener = "http://localhost:8081";  // Placeholder
+    }
+    
+    registered_apps_info_[event.app_name] = {event.endpoints, http_listener};
 }
 
 void HTTPService::handle_app_unregistration(const AppUnregistrationEvent& event) {
     PROTOFLOW_LOG_INFO(*this, "App unregistered: " << event.app_name);
     registered_apps_.erase(event.app_name);
+    registered_apps_info_.erase(event.app_name);
 }
 
 // ────────────────────────────────────────────────────────────────

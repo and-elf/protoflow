@@ -86,6 +86,16 @@ private:
     /// Serve aggregated state API
     HttpResponse serve_state_api(const HttpRequest& request);
 
+    /// Serve status endpoint (JSON with app status and registered apps)
+    HttpResponse serve_status(const HttpRequest&);
+
+    /// Serve status endpoint with data from registered apps
+    HttpResponse serve_status_async(const HttpRequest&);
+
+    /// Fetch JSON status from a specific app (via HTTP)
+    std::string fetch_app_status(const std::string& app_name,
+                                  const std::string& base_url);
+
     /// Check if client accepts HTML
     bool accepts_html(const HttpRequest& request) const;
 
@@ -110,6 +120,14 @@ private:
     std::unordered_map<std::string, HttpHandler> endpoints_;
     
     // Track dynamically registered apps and their endpoints for cleanup
+    // Maps app_name -> {endpoints_list, http_listener_address}
+    struct AppInfo {
+        std::vector<std::string> endpoints;
+        std::string http_listener;  // e.g., "http://localhost:8081"
+    };
+    std::unordered_map<std::string, AppInfo> registered_apps_info_;
+    
+    // Legacy map for backward compatibility
     std::unordered_map<std::string, std::vector<std::string>> registered_apps_;
     
     // Pending requests waiting for service responses (keyed by request_id)
