@@ -1,4 +1,9 @@
 #include "services/http_service.hpp"
+#include "services/handlers/status_handler.hpp"
+#include "services/handlers/state_handler.hpp"
+#include "services/handlers/home_handler.hpp"
+#include "services/handlers/app_handler.hpp"
+#include "services/handlers/static_handler.hpp"
 #include <protoflow/messages.hpp>
 #include <protoflow/logging/macros.hpp>
 #include <sstream>
@@ -54,28 +59,30 @@ void HTTPService::start() {
     }
 
     // Register built-in endpoints
+    using namespace handlers;
+
     register_endpoint("GET", "/", [this](const HttpRequest& req) {
-        return serve_home(req);
+        return handle_home(*this, req);
     });
 
     register_endpoint("GET", "/api/state", [this](const HttpRequest& req) {
-        return serve_state_api(req);
+        return handle_state_api(*this, req);
     });
 
     register_endpoint("GET", "/status", [this](const HttpRequest& req) {
-        return serve_status(req);
+        return handle_status(*this, req);
     });
 
     register_endpoint("GET", "/api/status", [this](const HttpRequest& req) {
-        return serve_status_async(req);
+        return handle_status_async(*this, req);
     });
 
     register_endpoint("GET", "/static/*", [this](const HttpRequest& req) {
-        return serve_static(req);
+        return handle_static(*this, req);
     });
 
     register_endpoint("GET", "/app/*", [this](const HttpRequest& req) {
-        return serve_app_endpoint(req);
+        return handle_app_endpoint(*this, req);
     });
 
     PROTOFLOW_LOG_INFO(*this, "Registered " << endpoints_.size() << " endpoints");
@@ -209,362 +216,19 @@ std::vector<service::Message> HTTPService::generate_outbound() {
 }
 
 // ────────────────────────────────────────────────────────────────
-//  Built-in page handlers
+//  Request handlers
 // ────────────────────────────────────────────────────────────────
-
-HttpResponse HTTPService::serve_home(const HttpRequest& /*request*/) {
-    using namespace html;
-
-    // ── Build navigation items HTML manually for runtime flexibility ──
-    std::string nav_items_html;
-    if (registered_apps_.empty()) {
-        nav_items_html = to_html(
-            li(attrs<class_<"nav-item">>{},
-               em(text("No apps registered")))
-        );
-    } else {
-        for (const auto& [name, endpoints] : registered_apps_) {
-            nav_items_html +=
-                "<li class=\"nav-item\">"
-                "<a class=\"nav-link\" href=\"#\" data-app=\"" + name + "\">" +
-                name + "</a></li>";
-        }
-    }
-
-    // ── Build page with html-fragment components and external CSS ──
-    // Header
-    auto header = div(attrs<class_<"header">>{},
-        h1(text("Protoflow Dashboard")),
-        badge_info(text("v0.1"))
-    );
-
-    // Welcome content
-    auto welcome = container(
-        section_with_title(
-            h2(text("System Overview")),
-            card(
-                h3(text("Welcome to Protoflow")),
-                p(text("Select an application from the sidebar to view "
-                       "its status fragment.")),
-                data_row(
-                    text("Registered apps:"),
-                    badge_info(text(std::to_string(registered_apps_.size())))
-                ),
-                data_row(
-                    text("Server status:"),
-                    status_ok(text("Running"))
-                )
-            )
-        )
-    );
-
-    // ── Assemble HTML document ──
-    std::string page =
-        "<!DOCTYPE html>\n"
-        "<html>\n"
-        "<head>\n"
-        "  <meta charset=\"utf-8\">\n"
-        "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-        "  <title>Protoflow Dashboard</title>\n"
-        "  <link rel=\"stylesheet\" href=\"/static/styles.css\">\n"
-        "</head>\n"
-        "<body>\n"
-        + to_html(header) +
-        "  <div class=\"layout\">\n"
-        "    <nav class=\"sidebar\">\n"
-        "      <h2>Applications</h2>\n"
-        "      <ul class=\"nav-list\">\n"
-        + nav_items_html +
-        "      </ul>\n"
-        "    </nav>\n"
-        "    <main class=\"main-content\" id=\"main-content\">\n"
-        + to_html(welcome) +
-        "    </main>\n"
-        "  </div>\n"
-        "  <script>\n"
-        R"js(
-async function loadFragment(appName, fragmentId) {
-    var main = document.getElementById('main-content');
-    main.innerHTML = '<div class="loading">Loading fragment…</div>';
-
-    document.querySelectorAll('.nav-link').forEach(function(el) {
-        el.classList.remove('active');
-    });
-    var active = document.querySelector('[data-app="' + appName + '"]');
-    if (active) active.classList.add('active');
-
-    try {
-        var resp = await fetch('/app/' + appName + '/fragment/' + fragmentId);
-        if (resp.ok) {
-            main.innerHTML = await resp.text();
-        } else {
-            main.innerHTML = '<div class="error-box">Failed to load fragment (HTTP ' + resp.status + ')</div>';
-        }
-    } catch (e) {
-        main.innerHTML = '<div class="error-box">Network error: ' + e.message + '</div>';
-    }
-}
-
-// Set up click handlers for nav links
-document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('.nav-link').forEach(function(link) {
-        link.addEventListener('click', function(e) {
-            e.preventDefault();
-            var appName = this.getAttribute('data-app');
-            if (appName) {
-                loadFragment(appName, 'status');
-            }
-        });
-    });
-});
-)js"
-        "  </script>\n"
-        "</body>\n"
-        "</html>";
-
-    HttpResponse response;
-    response.set_html(page);
-    return response;
-}
-
-HttpResponse HTTPService::serve_app_endpoint(const HttpRequest& request) {
-    using namespace html;
-
-    // Parse path: /app/{name}/fragment/{id} or /app/{name}/...
-    std::string_view path = request.path;
-    auto rest = path.substr(5);  // skip "/app/"
-
-    auto slash = rest.find('/');
-    std::string app_name;
-    std::string_view remainder;
-
-    if (slash == std::string_view::npos) {
-        app_name = std::string(rest);
-    } else {
-        app_name = std::string(rest.substr(0, slash));
-        remainder = rest.substr(slash + 1);
-    }
-
-    if (app_name.empty()) {
-        HttpResponse response;
-        response.status_code = 302;
-        response.headers["Location"] = "/";
-        return response;
-    }
-
-    // Fragment request: /app/{name}/fragment/{id}
-    if (remainder.starts_with("fragment/") && remainder.size() > 9) {
-        std::string fragment_id(remainder.substr(9));
-        return serve_fragment(app_name, fragment_id);
-    }
-
-    // App overview
-    auto it = registered_apps_.find(app_name);
-    if (it == registered_apps_.end()) {
-        HttpResponse response;
-        response.status_code = 404;
-        response.set_html(to_html(
-            card(
-                h3(text("Not Found")),
-                status_error(text("Application '" + app_name + "' is not registered"))
-            )
-        ));
-        return response;
-    }
-
-    HttpResponse response;
-    response.set_html(to_html(
-        container(
-            card(
-                h3(text(app_name)),
-                data_row(text("Endpoints:"),
-                         text(std::to_string(it->second.size()))),
-                data_row(text("Status:"),
-                         badge_success(text("Registered")))
-            )
-        )
-    ));
-    return response;
-}
-
-HttpResponse HTTPService::serve_fragment(const std::string& app_name,
-                                         const std::string& fragment_id) {
-    using namespace html;
-
-    auto it = registered_apps_.find(app_name);
-    if (it == registered_apps_.end()) {
-        HttpResponse response;
-        response.status_code = 404;
-        response.set_html(to_html(
-            card(
-                h3(text("Not Found")),
-                status_error(text("Application '" + app_name + "' is not registered"))
-            )
-        ));
-        return response;
-    }
-
-    // Build endpoint list items using html-fragment
-    std::string ep_items;
-    for (const auto& ep : it->second) {
-        ep_items += to_html(li(code(text(ep))));
-    }
-
-    // Fragment info card (html-fragment semantic components)
-    std::string info_html = to_html(
-        card(
-            h3(text(app_name + " \u2014 " + fragment_id)),
-            data_row(text("Application:"), badge_success(text(app_name))),
-            data_row(text("Fragment ID:"),  badge_info(text(fragment_id))),
-            data_row(text("Endpoints:"),    text(std::to_string(it->second.size())))
-        )
-    );
-
-    // Note about RPC forwarding
-    std::string note_html = to_html(
-        card_simple(
-            status_pending(
-                text("This is a placeholder fragment rendered by the main app's "
-                     "HTTPService using the html-fragment library. In production, "
-                     "fragment requests are forwarded to '" + app_name + "' via "
-                     "RPC (cmd::render_fragment) and the app returns its own "
-                     "html-fragment output.")
-            )
-        )
-    );
-
-    // Endpoint list card
-    std::string ep_header = to_html(h3(text("Registered Endpoints")));
-    std::string ep_html =
-        "<div class=\"card\"><div class=\"card-header\">" +
-        ep_header +
-        "</div><div class=\"card-body\"><ul>" +
-        ep_items +
-        "</ul></div></div>";
-
-    HttpResponse response;
-    response.set_html(
-        "<div class=\"container\">" +
-        info_html + note_html + ep_html +
-        "</div>"
-    );
-    return response;
-}
-
-HttpResponse HTTPService::serve_state_api(const HttpRequest& request) {
-    using namespace html;
-    HttpResponse response;
-
-    if (accepts_json(request) || !accepts_html(request)) {
-        std::string json = R"({"registered_apps":[)";
-        bool first = true;
-        for (const auto& [name, eps] : registered_apps_) {
-            if (!first) json += ",";
-            json += R"({"name":")"
-                    + name + R"(","endpoints":)"
-                    + std::to_string(eps.size()) + "}";
-            first = false;
-        }
-        json += "]}";
-        response.set_json(json);
-    } else {
-        std::string body_html = to_html(
-            container(
-                card(
-                    h3(text("System State")),
-                    data_row(
-                        text("Registered applications:"),
-                        badge_info(text(std::to_string(registered_apps_.size())))
-                    ),
-                    data_row(
-                        text("Status:"),
-                        status_ok(text("Running"))
-                    )
-                )
-            )
-        );
-        response.set_html(
-            "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
-            "<title>System State</title></head><body>"
-            + body_html +
-            "</body></html>"
-        );
-    }
-
-    return response;
-}
-
-std::string HTTPService::fetch_app_status(const std::string& app_name,
-                                          const std::string& base_url) {
-    // For now, return a placeholder that indicates we tried to fetch from the app
-    // In a full implementation, this would make an HTTP GET request to base_url/status
-    // and parse the response
-    PROTOFLOW_LOG_DEBUG(*this, "Would fetch status from " << app_name
-                       << " at " << base_url << "/status");
-    return "{}";
-}
-
-HttpResponse HTTPService::serve_status_async(const HttpRequest& /*request*/) {
-    HttpResponse response;
-
-    // Build JSON response with data from registered apps
-    std::string json = R"({"status":"running","registered_apps":[)";
-    bool first = true;
-    for (const auto& [name, info] : registered_apps_info_) {
-        if (!first) json += ",";
-        
-        // Escape app name for JSON
-        std::string escaped_name = name;
-        size_t pos = 0;
-        while ((pos = escaped_name.find('"', pos)) != std::string::npos) {
-            escaped_name.replace(pos, 1, "\\\"");
-            pos += 2;
-        }
-        
-        // Try to fetch app-specific status
-        // For now, just include what we know from registration
-        json += R"({"name":")"
-                + escaped_name
-                + R"(","endpoints":)"
-                + std::to_string(info.endpoints.size())
-                + R"(,"http_listener":")"
-                + info.http_listener
-                + "\"}";
-        first = false;
-    }
-    json += R"(],"timestamp":""})";
-
-    response.set_json(json);
-    return response;
-}
-
-HttpResponse HTTPService::serve_status(const HttpRequest& /*request*/) {
-    HttpResponse response;
-
-    // Build JSON response
-    std::string json = R"({"status":"running","registered_apps":[)";
-    bool first = true;
-    for (const auto& [name, endpoints] : registered_apps_) {
-        if (!first) json += ",";
-        // Escape app name for JSON
-        std::string escaped_name = name;
-        // Simple escape: replace quotes with escaped quotes
-        size_t pos = 0;
-        while ((pos = escaped_name.find('"', pos)) != std::string::npos) {
-            escaped_name.replace(pos, 1, "\\\"");
-            pos += 2;
-        }
-        json += R"({"name":")"
-                + escaped_name + R"(","endpoints":)"  
-                + std::to_string(endpoints.size())
-                + "}";
-        first = false;
-    }
-    json += R"(],"timestamp":""})";
-
-    response.set_json(json);
-    return response;
-}
+//
+// All HTTP endpoint handlers have been moved to separate files in the
+// handlers/ directory for better organization and maintainability.
+// They now use nlohmann::json instead of raw string concatenation.
+//
+// Moved handlers:
+//  - handle_home() → services/handlers/home_handler.cpp
+//  - handle_app_endpoint(), handle_fragment() → services/handlers/app_handler.cpp
+//  - handle_state_api() → services/handlers/state_handler.cpp
+//  - handle_status(), handle_status_async() → services/handlers/status_handler.cpp
+//  - handle_static(), read_static_file() → services/handlers/static_handler.cpp
 
 // ────────────────────────────────────────────────────────────────
 //  App registration / unregistration handlers
@@ -631,99 +295,5 @@ bool HTTPService::accepts_json(const HttpRequest& request) const {
     return false;
 }
 
-// ────────────────────────────────────────────────────────────────
-//  Static file serving
-// ────────────────────────────────────────────────────────────────
-
-std::optional<std::vector<std::byte>> HTTPService::read_static_file(const std::string& filename) {
-    if (static_dir_.empty()) {
-        PROTOFLOW_LOG_DEBUG(*this, "Static directory not configured");
-        return std::nullopt;
-    }
-
-    // Prevent path traversal attacks
-    if (filename.find("..") != std::string::npos || filename.find("//") != std::string::npos) {
-        PROTOFLOW_LOG_WARN(*this, "Attempted path traversal in static file: " << filename);
-        return std::nullopt;
-    }
-
-    std::string filepath = static_dir_ + "/" + filename;
-    std::ifstream file(filepath, std::ios::binary);
-    if (!file.is_open()) {
-        PROTOFLOW_LOG_DEBUG(*this, "Static file not found: " << filepath);
-        return std::nullopt;
-    }
-
-    // Read file into vector
-    file.seekg(0, std::ios::end);
-    std::streamsize size = file.tellg();
-    file.seekg(0, std::ios::beg);
-
-    std::vector<std::byte> buffer(static_cast<size_t>(size));
-    if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
-        PROTOFLOW_LOG_WARN(*this, "Error reading static file: " << filepath);
-        return std::nullopt;
-    }
-
-    PROTOFLOW_LOG_DEBUG(*this, "Served static file: " << filename << " (" << size << " bytes)");
-    return buffer;
-}
-
-HttpResponse HTTPService::serve_static(const HttpRequest& request) {
-    HttpResponse response;
-
-    // Extract filename from path: /static/{filename}
-    std::string_view path = request.path;
-    if (!path.starts_with("/static/")) {
-        response.status_code = 400;
-        response.set_json(R"({"error": "Invalid static path"})");
-        return response;
-    }
-
-    // Get the filename relative to /static/
-    std::string filename(path.substr(8));  // skip "/static/"
-
-    if (filename.empty()) {
-        response.status_code = 400;
-        response.set_json(R"({"error": "No file specified"})");
-        return response;
-    }
-
-    // Try to read the file
-    auto file_data = read_static_file(filename);
-    if (!file_data) {
-        response.status_code = 404;
-        response.set_json(R"({"error": "Static file not found"})");
-        return response;
-    }
-
-    // Determine content type based on file extension
-    std::string content_type = "application/octet-stream";
-    if (filename.ends_with(".css")) {
-        content_type = "text/css; charset=utf-8";
-    } else if (filename.ends_with(".js")) {
-        content_type = "application/javascript; charset=utf-8";
-    } else if (filename.ends_with(".html")) {
-        content_type = "text/html; charset=utf-8";
-    } else if (filename.ends_with(".json")) {
-        content_type = "application/json; charset=utf-8";
-    } else if (filename.ends_with(".png")) {
-        content_type = "image/png";
-    } else if (filename.ends_with(".jpg") || filename.ends_with(".jpeg")) {
-        content_type = "image/jpeg";
-    } else if (filename.ends_with(".svg")) {
-        content_type = "image/svg+xml";
-    } else if (filename.ends_with(".woff")) {
-        content_type = "font/woff";
-    } else if (filename.ends_with(".woff2")) {
-        content_type = "font/woff2";
-    }
-
-    response.status_code = 200;
-    response.headers["Content-Type"] = content_type;
-    response.body = std::move(*file_data);
-
-    return response;
-}
 
 } // namespace protoflow::mainapp

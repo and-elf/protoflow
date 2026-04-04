@@ -23,6 +23,11 @@ protoflow_add_app(
         src/services/app_registration_service.cpp
         src/services/hardware_arbitration_service.cpp
         src/services/http_service.cpp
+        src/services/handlers/status_handler.cpp
+        src/services/handlers/state_handler.cpp
+        src/services/handlers/home_handler.cpp
+        src/services/handlers/app_handler.cpp
+        src/services/handlers/static_handler.cpp
         src/services/http_listener_service.cpp
         src/services/rpc_server_service.cpp
     

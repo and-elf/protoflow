@@ -63,6 +63,24 @@ public:
                           const std::string& path, 
                           HttpHandler handler);
 
+    // Getters for handlers to access data members
+    const std::unordered_map<std::string, std::vector<std::string>>& get_registered_apps() const {
+        return registered_apps_;
+    }
+
+    struct AppInfo {
+        std::vector<std::string> endpoints;
+        std::string http_listener;
+    };
+
+    const std::unordered_map<std::string, AppInfo>& get_registered_apps_info() const {
+        return registered_apps_info_;
+    }
+
+    const std::string& get_static_dir() const {
+        return static_dir_;
+    }
+
 protected:
     void handle(messaging::Message&& msg) override;
     std::vector<messaging::Message> generate_outbound() override;
@@ -70,43 +88,14 @@ protected:
 private:
     friend class HTTPServiceTest;  // Allow tests to access private members
     
-    /// Handle incoming HTTP request
+    /// Handle incoming HTTP request (routing only)
     HttpResponse handle_request(const HttpRequest& request);
 
-    /// Serve home page with navigation
-    HttpResponse serve_home(const HttpRequest& request);
-
-    /// Serve app endpoint (proxy to registered app)
-    HttpResponse serve_app_endpoint(const HttpRequest& request);
-
-    /// Serve a fragment from a registered app (via html-fragment library)
-    HttpResponse serve_fragment(const std::string& app_name,
-                                const std::string& fragment_id);
-
-    /// Serve aggregated state API
-    HttpResponse serve_state_api(const HttpRequest& request);
-
-    /// Serve status endpoint (JSON with app status and registered apps)
-    HttpResponse serve_status(const HttpRequest&);
-
-    /// Serve status endpoint with data from registered apps
-    HttpResponse serve_status_async(const HttpRequest&);
-
-    /// Fetch JSON status from a specific app (via HTTP)
-    std::string fetch_app_status(const std::string& app_name,
-                                  const std::string& base_url);
-
-    /// Serve static files (CSS, JS, etc.)
-    HttpResponse serve_static(const HttpRequest& request);
-
-    /// Read a file from the static directory
-    std::optional<std::vector<std::byte>> read_static_file(const std::string& filename);
+    /// Content negotiation helpers
     bool accepts_html(const HttpRequest& request) const;
-
-    /// Check if client accepts JSON
     bool accepts_json(const HttpRequest& request) const;
 
-    /// Message handlers
+    /// Message handlers for app registration lifecycle
     void handle_app_registration(const AppRegistrationEvent& event);
     void handle_app_unregistration(const AppUnregistrationEvent& event);
 
@@ -126,10 +115,6 @@ private:
     
     // Track dynamically registered apps and their endpoints for cleanup
     // Maps app_name -> {endpoints_list, http_listener_address}
-    struct AppInfo {
-        std::vector<std::string> endpoints;
-        std::string http_listener;  // e.g., "http://localhost:8081"
-    };
     std::unordered_map<std::string, AppInfo> registered_apps_info_;
     
     // Legacy map for backward compatibility
