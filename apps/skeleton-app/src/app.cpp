@@ -3,36 +3,15 @@
 #include <protoflow/html.hpp>
 #include <protoflow/transport/tcp.hpp>
 #include <iostream>
-#include <thread>
-#include <csignal>
 
 namespace protoflow::skeleton {
 
-namespace {
-    std::atomic<App*> g_app{nullptr};
-
-    [[maybe_unused]] void signal_handler(int signal) {
-        if (auto* app = g_app.load(); app != nullptr) {
-            std::cout << "\nReceived signal " << signal << ", shutting down...\n";
-            app->shutdown();
-        }
-    }
-} // namespace
-
 App::App(AppConfig config)
-    : config_(std::move(config))
-{
-    g_app.store(this);
-    std::signal(SIGINT, signal_handler);
-    std::signal(SIGTERM, signal_handler);
+    : AppBase(AppBase::Config{.cycle_time = config.cycle_time}),
+      config_(std::move(config)) {
 }
 
-App::~App() {
-    if (running_.load()) {
-        shutdown();
-    }
-    g_app.store(nullptr);
-}
+App::~App() = default;
 
 bool App::initialize() {
     std::cout << "Initializing " << config_.app_name << "...\n";
@@ -83,55 +62,23 @@ bool App::initialize() {
     return true;
 }
 
-void App::run() {
-    running_.store(true);
-    std::cout << config_.app_name << " running.\n";
-
-    while (running_.load()) {
-        auto cycle_start = std::chrono::steady_clock::now();
-
-        cycle();
-
-        auto elapsed = std::chrono::steady_clock::now() - cycle_start;
-        if (elapsed < config_.cycle_time) {
-            std::this_thread::sleep_for(config_.cycle_time - elapsed);
-        }
-    }
-
-    std::cout << config_.app_name << " stopped.\n";
-}
-
-void App::shutdown() {
-    std::cout << "Shutting down " << config_.app_name << "...\n";
-    running_.store(false);
-
-    // Release any held hardware resources
-    hw_client_.reset();
-    hw_transport_.reset();
-
-    // Stop services
-    registration_client_->stop();
-
-    std::cout << "All services stopped.\n";
-}
-
 void App::cycle() {
     // Poll registration client (handles connection, heartbeats, etc.)
-    registration_client_->poll();
-
-    // Poll other services
-    for (auto& svc : services_) {
-        svc->poll();
+    if (registration_client_) {
+        registration_client_->poll();
     }
 
-    route_messages();
+    // Call base class cycle() to poll all other services
+    AppBase::cycle();
 }
 
 void App::route_messages() {
     // Collect outbound from registration client
     while (auto msg = registration_client_->pop_outbound()) {
         // Route to interested services
-        for (auto& svc : services_) {
+        auto& services = get_services();
+        for (auto& svc : services) {
+            if (!svc) continue;
             auto types = svc->get_message_types();
             if (types.empty()) continue;
             for (auto t : types) {
@@ -144,7 +91,9 @@ void App::route_messages() {
     }
 
     // Collect outbound from other services
-    for (auto& svc : services_) {
+    auto& services = get_services();
+    for (auto& svc : services) {
+        if (!svc) continue;
         while (auto msg = svc->pop_outbound()) {
             // Could route back to registration client or other services
         }

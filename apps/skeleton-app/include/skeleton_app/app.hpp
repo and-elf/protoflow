@@ -5,6 +5,7 @@
 #include <protoflow/messaging/router.hpp>
 #include <protoflow/rpc/rpc_app.hpp>
 #include <protoflow/rpc/protocol.hpp>
+#include <protoflow/runtime/app_base.hpp>
 #include <protoflow/app_registration_client/app_registration_client.hpp>
 #include <protoflow/app_registration_client/config.hpp>
 #include <protoflow/hw/hw_client.hpp>
@@ -13,7 +14,6 @@
 #include <memory>
 #include <vector>
 #include <string>
-#include <atomic>
 #include <chrono>
 #include <optional>
 
@@ -61,7 +61,7 @@ struct AppConfig {
 ///   - HTML fragment rendering
 ///
 /// Copy this app as a starting point for new applications.
-class App : public rpc::rpc_app {
+class App : public runtime::AppBase, public rpc::rpc_app {
 public:
     explicit App(AppConfig config);
     ~App() override;
@@ -69,16 +69,7 @@ public:
     // --- Lifecycle ---
 
     /// Initialize all services and internal state
-    bool initialize();
-
-    /// Run the main loop (blocks until shutdown)
-    void run();
-
-    /// Request graceful shutdown
-    void shutdown();
-
-    /// Check if the app is running
-    [[nodiscard]] bool is_running() const noexcept { return running_.load(); }
+    bool initialize() override;
 
     // --- rpc_app interface ---
 
@@ -99,22 +90,17 @@ public:
     /// Get current configuration
     [[nodiscard]] const AppConfig& config() const noexcept { return config_; }
 
-private:
-    void cycle();
-    void route_messages();
+protected:
+    /// Override cycle to add app-specific logic after base cycle
+    void cycle() override;
 
+    /// Override route_messages for app-specific message routing
+    void route_messages() override;
+
+private:
     AppConfig config_;
-    std::atomic<bool> running_{false};
 
     // Services
-    std::vector<std::unique_ptr<service::Service>> services_;
-    std::unique_ptr<messaging::Router> router_;
-
-    // App registration client (non-owning ref, ownership in services_)
-    std::unique_ptr<app_registration_client::AppRegistrationClient> registration_client_;
-
-    // Hardware client (created on-demand when transport is available)
-    std::unique_ptr<rpc::transport_interface> hw_transport_;
     std::unique_ptr<hw::hw_client> hw_client_;
 };
 

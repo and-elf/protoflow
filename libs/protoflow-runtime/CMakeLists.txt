@@ -10,6 +10,7 @@ protoflow_add_library(
     SOURCES
         src/runtime.cpp
         src/scheduler.cpp
+        src/app_base.cpp
     
     PUBLIC_INCLUDE_DIRS
         include

@@ -8,39 +8,15 @@
 #include <protoflow/config/hardware_config.hpp>
 #include <protoflow/config/logging_config.hpp>
 #include <iostream>
-#include <chrono>
-#include <thread>
-#include <csignal>
 
 namespace protoflow::mainapp {
 
-namespace {
-    std::atomic<App*> g_runtime{nullptr};
-
-    [[maybe_unused]] void signal_handler(int signal) {
-        if (auto* app = g_runtime.load(); app != nullptr) {
-            std::cout << "\nReceived signal " << signal << ", shutting down...\n";
-            app->shutdown();
-        }
-    }
+App::App(Config config)
+    : AppBase(AppBase::Config{.cycle_time = std::chrono::milliseconds(10)}),
+      config_(std::move(config)) {
 }
 
-App::App(Config config)
-        : config_(std::move(config))
-    {
-        g_runtime.store(this);
-        std::signal(SIGINT, signal_handler);
-        std::signal(SIGTERM, signal_handler);
-    }
-
-    App::~App() {
-        if (running_.load()) {
-            shutdown();
-        }
-        g_runtime.store(nullptr);
-    }
-
-    bool App::initialize() {
+bool App::initialize() {
     std::cout << "Initializing Protoflow Main Application Runtime...\n";
 
     // Initialize logging
@@ -61,11 +37,7 @@ App::App(Config config)
     logging_service->set_min_level(logging_config.min_level);
     logging_service->set_max_stored_logs(logging_config.max_stored_logs);
     logger_ = logging_service.get();
-    services_.push_back(std::move(logging_service));
-
-    // Initialize message router
-    std::cout << "  - Initializing message router...\n";
-    router_ = std::make_unique<messaging::Router>();
+    get_services().push_back(std::move(logging_service));
 
     // Create services
     std::cout << "  - Creating services:\n";
@@ -73,7 +45,7 @@ App::App(Config config)
     if (config_.enable_registration) {
         std::cout << "    * ApplicationRegistrationService\n";
         auto app_reg_service = std::make_unique<AppRegistrationService>();
-        services_.push_back(std::move(app_reg_service));
+        get_services().push_back(std::move(app_reg_service));
     }
 
     if (config_.enable_hardware_arbitration) {
@@ -90,31 +62,32 @@ App::App(Config config)
         auto hw_service = std::make_unique<HardwareArbitrationService>(
             hw_config.value_or(config::HardwareConfig{})
         );
-        services_.push_back(std::move(hw_service));
+        get_services().push_back(std::move(hw_service));
     }
 
     if (config_.enable_http) {
         std::cout << "    * HTTPService (event-driven)\n";
         auto http_service = std::make_unique<HTTPService>();
-        services_.push_back(std::move(http_service));
+        get_services().push_back(std::move(http_service));
 
         std::cout << "    * HttpListenerService (listening on "
                   << config_.listen_address << ":"
                   << config_.listen_port << ")\n";
         auto listener = std::make_unique<HttpListenerService>(
             config_.listen_address, config_.listen_port);
-        services_.push_back(std::move(listener));
+        get_services().push_back(std::move(listener));
     }
 
     // Initialize RPC server service if a transport is provided in config
     if (config_.rpc_server_transport) {
         auto rpc_server_service = std::make_unique<RpcServerService>(std::move(config_.rpc_server_transport));
         std::cout << "    * RpcServerService (custom transport)\n";
-        services_.push_back(std::move(rpc_server_service));
+        get_services().push_back(std::move(rpc_server_service));
     }
+
     // Start all services
     std::cout << "  - Starting services...\n";
-    for (auto& service : services_) {
+    for (auto& service : get_services()) {
         service->start();
     }
 
@@ -122,59 +95,20 @@ App::App(Config config)
     return true;
 }
 
-void App::run() {
-    if (services_.empty()) {
-        std::cerr << "Error: No services configured. Runtime cannot start.\n";
-        return;
-    }
-
-    running_.store(true);
-    std::cout << "Runtime started. Processing messages...\n";
-
-    using namespace std::chrono_literals;
-    const auto cycle_time = 10ms; // 100Hz cycle rate
-
-    while (running_.load()) {
-        auto cycle_start = std::chrono::steady_clock::now();
-
-        // Execute one scheduler cycle
-        cycle();
-
-        // Route messages between services
-        App::route_messages();
-
-        // Sleep to maintain cycle time
-        auto elapsed = std::chrono::steady_clock::now() - cycle_start;
-        if (elapsed < cycle_time) {
-            std::this_thread::sleep_for(cycle_time - elapsed);
-        }
-    }
-
-    std::cout << "Runtime stopped.\n";
-}
-
-void App::shutdown() {
-    std::cout << "Shutting down runtime...\n";
-    running_.store(false);
-
-    // Stop all services
-    for (auto& service : services_) {
-        service->stop();
-    }
-
-    std::cout << "All services stopped.\n";
-}
-
 void App::cycle() {
     // One message per service per cycle (deterministic execution)
-    for (auto& service : services_) {
+    for (auto& service : get_services()) {
         service->poll();
     }
+
+    // Route messages
+    route_messages();
 }
 
 void App::route_messages() {
     // Collect outbound messages from all services and route to interested services.
-    for (auto& service_ptr : services_) {
+    auto& services = get_services();
+    for (auto& service_ptr : services) {
         auto* service = service_ptr.get();
 
         // Pop outbound messages until none remain
@@ -186,7 +120,7 @@ void App::route_messages() {
 
             // Determine whether any service declares explicit subscriptions
             bool any_subscriptions = false;
-            for (auto& dst_ptr : services_) {
+            for (auto& dst_ptr : services) {
                 auto types = dst_ptr->get_message_types();
                 if (!types.empty()) { any_subscriptions = true; break; }
             }
@@ -197,7 +131,7 @@ void App::route_messages() {
             }
 
             // Otherwise deliver only to services that subscribed to this message type
-            for (auto& dst_ptr : services_) {
+            for (auto& dst_ptr : services) {
                 auto types = dst_ptr->get_message_types();
                 if (types.empty()) {
                     continue;

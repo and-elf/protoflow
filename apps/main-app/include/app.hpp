@@ -4,17 +4,16 @@
 #include <protoflow/messaging.hpp>
 #include <protoflow/logging.hpp>
 #include <protoflow/rpc/protocol.hpp>
+#include <protoflow/runtime/app_base.hpp>
 
 #include <memory>
-#include <vector>
 #include <string>
-#include <atomic>
 
 namespace protoflow::mainapp {
 
 /// Main application runtime
 /// Manages services, routes messages, and schedules execution
-class App {
+class App : public runtime::AppBase {
 
 public:
     struct Config {
@@ -31,31 +30,18 @@ public:
     };
 
     explicit App(Config config);
-    ~App();
 
     /// Initialize runtime and all services
-    bool initialize();
+    bool initialize() override;
 
-    /// Start runtime and begin message processing
-    void run();
+protected:
+    /// Execute one scheduler cycle
+    void cycle() override;
 
-    /// Request shutdown
-    void shutdown();
-
-    /// Check if runtime is running
-    [[nodiscard]] bool is_running() const { return running_.load(); }
+    void route_messages() override;
 
 private:
-    /// Execute one scheduler cycle
-    void cycle();
-
-    void route_messages();
-
     Config config_;
-    std::atomic<bool> running_{false};
-    
-    // Services
-    std::vector<std::unique_ptr<service::Service>> services_;
     
     // Message router
     std::unique_ptr<messaging::Router> router_;
