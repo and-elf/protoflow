@@ -52,7 +52,7 @@ public:
     void queue_message(hw_proto::cmd command, const T& msg) {
         // Queue header first
         auto header = protoflow::rpc::make_header(
-            static_cast<uint16_t>(command),
+            static_cast<protoflow::rpc::cmd>(command),
             sizeof(T)
         );
         
@@ -203,7 +203,7 @@ TEST(HwClientTest, ReadSuccess) {
     response.reserved = 0;
     
     auto header = protoflow::rpc::make_header(
-        static_cast<uint16_t>(hw_proto::cmd::hw_read_response),
+        static_cast<protoflow::rpc::cmd>(hw_proto::cmd::hw_read_response),
         hw_proto::hw_read_response_msg::wire_size + 5  // response struct + 5 bytes of data
     );
     

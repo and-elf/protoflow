@@ -5,7 +5,7 @@
 // the main application's hardware arbitration service.
 
 #include <protoflow/hw/hw.hpp>
-#include <protoflow/rpc/rpc_base.hpp>
+#include <protoflow/rpc/protocol.hpp>
 #include <iostream>
 #include <vector>
 #include <string>

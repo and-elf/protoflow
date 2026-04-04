@@ -1,7 +1,6 @@
 #pragma once
 
 #include "protocol.hpp"
-#include <protoflow/rpc/rpc_base.hpp>
 #include <protoflow/rpc/protocol.hpp>
 #include <expected>
 #include <string>
@@ -87,8 +86,8 @@ public:
         msg.resource[len] = '\0';
         
         // Send request
-        auto header = rpc::protocol::make_header(
-            static_cast<rpc::protocol::cmd>(protocol::cmd::request_hw_access),
+        auto header = rpc::make_header(
+            static_cast<rpc::cmd>(protocol::cmd::request_hw_access),
             protocol::request_hw_access_msg::wire_size
         );
         
@@ -144,7 +143,7 @@ public:
         msg.flags = 0;
         
         auto header = rpc::make_header(
-            static_cast<uint16_t>(protocol::cmd::hw_read),
+            static_cast<rpc::cmd>(protocol::cmd::hw_release),
             protocol::hw_release_msg::wire_size
         );
         
@@ -203,8 +202,8 @@ public:
         payload.insert(payload.end(), msg_bytes, msg_bytes + protocol::hw_write_msg::wire_size);
         payload.insert(payload.end(), data.begin(), data.end());
         
-        auto header = rpc::protocol::make_header(
-            static_cast<rpc::protocol::cmd>(protocol::cmd::hw_write),
+        auto header = rpc::make_header(
+            static_cast<rpc::cmd>(protocol::cmd::hw_write),
             static_cast<uint32_t>(payload.size())
         );
         
@@ -254,7 +253,7 @@ public:
         msg.flags = 0;
         
         auto header = rpc::make_header(
-            static_cast<uint16_t>(protocol::cmd::hw_read),
+            static_cast<rpc::cmd>(protocol::cmd::hw_read),
             protocol::hw_read_msg::wire_size
         );
         
@@ -325,7 +324,7 @@ public:
         payload.insert(payload.end(), arg.begin(), arg.end());
         
         auto header = rpc::make_header(
-            static_cast<uint16_t>(protocol::cmd::hw_ioctl),
+            static_cast<rpc::cmd>(protocol::cmd::hw_ioctl),
             static_cast<uint32_t>(payload.size())
         );
         
@@ -373,31 +372,31 @@ private:
     
     rpc::transport_interface& transport_;
     
-    [[nodiscard]] bool send_with_header(const rpc::protocol::rpc_header& header,
+    [[nodiscard]] bool send_with_header(const rpc::rpc_header& header,
                                          std::span<const std::byte> payload) {
         std::vector<std::byte> buffer;
-        buffer.reserve(rpc::protocol::rpc_header::wire_size + payload.size());
+        buffer.reserve(rpc::rpc_header::wire_size + payload.size());
         
         auto* hdr_bytes = reinterpret_cast<const std::byte*>(&header);
-        buffer.insert(buffer.end(), hdr_bytes, hdr_bytes + rpc::protocol::rpc_header::wire_size);
+        buffer.insert(buffer.end(), hdr_bytes, hdr_bytes + rpc::rpc_header::wire_size);
         buffer.insert(buffer.end(), payload.begin(), payload.end());
         
         return transport_.send(buffer);
     }
     
-    [[nodiscard]] std::expected<rpc::protocol::rpc_header, std::string>
+    [[nodiscard]] std::expected<rpc::rpc_header, std::string>
     receive_header() {
-        auto result = transport_.receive(rpc::protocol::rpc_header::wire_size);
+        auto result = transport_.receive(rpc::rpc_header::wire_size);
         if (!result) {
             return std::unexpected(result.error());
         }
         
-        if (result->size() != rpc::protocol::rpc_header::wire_size) {
+        if (result->size() != rpc::rpc_header::wire_size) {
             return std::unexpected("Invalid header size");
         }
         
-        rpc::protocol::rpc_header header;
-        std::memcpy(&header, result->data(), rpc::protocol::rpc_header::wire_size);
+        rpc::rpc_header header;
+        std::memcpy(&header, result->data(), rpc::rpc_header::wire_size);
         
         if (!header.is_valid()) {
             return std::unexpected("Invalid header magic");
