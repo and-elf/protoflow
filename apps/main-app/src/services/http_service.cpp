@@ -150,8 +150,7 @@ HttpResponse HTTPService::handle_request(const HttpRequest& request) {
     for (const auto& [pattern, handler] : endpoints_) {
         if (pattern.find('*') != std::string::npos) {
             std::string prefix = pattern.substr(0, pattern.find('*'));
-            std::string method_prefix = request.method + " " + prefix;
-            if (key.starts_with(method_prefix)) return handler(request);
+            if (key.starts_with(prefix)) return handler(request);
         }
     }
 
