@@ -3,6 +3,8 @@
 #include <protoflow/logging/macros.hpp>
 #include <sstream>
 #include <nlohmann/json.hpp>
+#include <fstream>
+#include <filesystem>
 
 
 
@@ -25,6 +27,32 @@ void HTTPService::start() {
 
     running_ = true;
 
+    // Set up static files directory
+    // Try multiple possible locations for the static directory
+    std::vector<std::string> static_paths = {
+        "./apps/main-app/static",
+        "../apps/main-app/static",
+        "../../apps/main-app/static",
+        "../../../apps/main-app/static",
+        "/home/andreas/work/protoflow/apps/main-app/static"
+    };
+    
+    for (const auto& path : static_paths) {
+        try {
+            if (std::filesystem::exists(path)) {
+                static_dir_ = std::filesystem::absolute(path).string();
+                PROTOFLOW_LOG_INFO(*this, "Found static directory: " << static_dir_);
+                break;
+            }
+        } catch (const std::exception& e) {
+            PROTOFLOW_LOG_DEBUG(*this, "Error checking path " << path << ": " << e.what());
+        }
+    }
+    
+    if (static_dir_.empty()) {
+        PROTOFLOW_LOG_WARN(*this, "Static directory not found, static files will not be served");
+    }
+
     // Register built-in endpoints
     register_endpoint("GET", "/", [this](const HttpRequest& req) {
         return serve_home(req);
@@ -40,6 +68,10 @@ void HTTPService::start() {
 
     register_endpoint("GET", "/api/status", [this](const HttpRequest& req) {
         return serve_status_async(req);
+    });
+
+    register_endpoint("GET", "/static/*", [this](const HttpRequest& req) {
+        return serve_static(req);
     });
 
     register_endpoint("GET", "/app/*", [this](const HttpRequest& req) {
@@ -183,7 +215,7 @@ std::vector<service::Message> HTTPService::generate_outbound() {
 HttpResponse HTTPService::serve_home(const HttpRequest& /*request*/) {
     using namespace html;
 
-    // ── Sidebar navigation items (runtime app data → string concat) ──
+    // ── Build navigation items HTML manually for runtime flexibility ──
     std::string nav_items_html;
     if (registered_apps_.empty()) {
         nav_items_html = to_html(
@@ -193,119 +225,67 @@ HttpResponse HTTPService::serve_home(const HttpRequest& /*request*/) {
     } else {
         for (const auto& [name, endpoints] : registered_apps_) {
             nav_items_html +=
-                "<li class=\"nav-item\">"  // runtime attrs for dynamic href
-                "<a class=\"nav-link\" href=\"#\" data-app=\"" + name + "\" "
-                "onclick=\"loadFragment('" + name + "','status'); return false;\">" +
+                "<li class=\"nav-item\">"
+                "<a class=\"nav-link\" href=\"#\" data-app=\"" + name + "\">" +
                 name + "</a></li>";
         }
     }
 
-    // ── Header (html-fragment) ──
-    std::string header_html = to_html(
-        div(attrs<class_<"header">>{},
-            h1(text("Protoflow Dashboard")),
-            badge_info(text("v0.1"))
-        )
+    // ── Build page with html-fragment components and external CSS ──
+    // Header
+    auto header = div(attrs<class_<"header">>{},
+        h1(text("Protoflow Dashboard")),
+        badge_info(text("v0.1"))
     );
 
-    // ── Welcome content (html-fragment semantic components) ──
-    std::string welcome_html = to_html(
-        container(
-            section_with_title(
-                h2(text("System Overview")),
-                card(
-                    h3(text("Welcome to Protoflow")),
-                    p(text("Select an application from the sidebar to view "
-                           "its status fragment.")),
-                    data_row(
-                        text("Registered apps:"),
-                        badge_info(text(std::to_string(registered_apps_.size())))
-                    ),
-                    data_row(
-                        text("Server status:"),
-                        status_ok(text("Running"))
-                    )
+    // Welcome content
+    auto welcome = container(
+        section_with_title(
+            h2(text("System Overview")),
+            card(
+                h3(text("Welcome to Protoflow")),
+                p(text("Select an application from the sidebar to view "
+                       "its status fragment.")),
+                data_row(
+                    text("Registered apps:"),
+                    badge_info(text(std::to_string(registered_apps_.size())))
+                ),
+                data_row(
+                    text("Server status:"),
+                    status_ok(text("Running"))
                 )
             )
         )
     );
 
-    // ── Assemble full HTML document ──
+    // ── Assemble HTML document ──
     std::string page =
-        "<!DOCTYPE html>\n<html>\n<head>\n"
-        "<meta charset=\"utf-8\">\n"
-        "<title>Protoflow Dashboard</title>\n"
-        "<style>\n"
-        R"css(
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-     background:#f0f2f5;color:#333}
-.header{background:#1a1a2e;color:#fff;padding:14px 24px;
-        display:flex;align-items:center;justify-content:space-between}
-.header h1{font-size:1.3rem;font-weight:600}
-.layout{display:flex;height:calc(100vh - 52px)}
-.sidebar{width:240px;background:#16213e;color:#ccc;padding:20px 0;
-         overflow-y:auto;flex-shrink:0}
-.sidebar h2{font-size:.8rem;text-transform:uppercase;letter-spacing:1.5px;
-            color:#7a7a9a;padding:0 20px 12px;border-bottom:1px solid #2a2a4a;
-            margin-bottom:8px}
-.nav-list{list-style:none}
-.nav-item{margin:1px 0}
-.nav-link{display:block;padding:10px 20px;color:#b0b0c8;text-decoration:none;
-          font-size:.9rem;transition:all .15s}
-.nav-link:hover{background:#1a1a3e;color:#fff}
-.nav-link.active{background:#0d2137;color:#4fc3f7;border-left:3px solid #4fc3f7;
-                 padding-left:17px}
-.main-content{flex:1;padding:28px;overflow-y:auto}
-.container{max-width:840px}
-.card{background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08);
-      margin-bottom:16px;overflow:hidden}
-.card-header{padding:14px 20px;border-bottom:1px solid #eee;font-weight:600}
-.card-body{padding:20px}
-.section{margin-bottom:24px}
-.section-title{margin-bottom:12px}
-.data-row{display:flex;justify-content:space-between;align-items:center;
-          padding:10px 0;border-bottom:1px solid #f5f5f5}
-.data-row:last-child{border-bottom:none}
-.data-label{color:#666;font-size:.9rem}
-.data-value{font-weight:500}
-.badge{display:inline-block;padding:3px 10px;border-radius:12px;
-       font-size:.78rem;font-weight:600}
-.badge-success{background:#e8f5e9;color:#2e7d32}
-.badge-error{background:#ffebee;color:#c62828}
-.badge-warning{background:#fff3e0;color:#e65100}
-.badge-info{background:#e3f2fd;color:#1565c0}
-.status{padding:8px 14px;border-radius:6px;font-size:.9rem}
-.status-ok{background:#e8f5e9;border-left:3px solid #4caf50}
-.status-error{background:#ffebee;border-left:3px solid #f44336}
-.status-warning{background:#fff3e0;border-left:3px solid #ff9800}
-.status-pending{background:#f3e5f5;border-left:3px solid #9c27b0}
-.metric{display:flex;align-items:baseline;gap:8px;padding:6px 0}
-.metric-label{color:#666;font-size:.9rem}
-.metric-value{font-size:1.2rem;font-weight:600}
-.metric-unit{color:#999;font-size:.8rem}
-.loading{text-align:center;padding:48px;color:#999}
-.error-box{background:#ffebee;color:#c62828;padding:16px 20px;border-radius:8px;
-           border-left:3px solid #f44336}
-ul{list-style:disc;padding-left:20px}
-code{background:#f5f5f5;padding:2px 6px;border-radius:3px;font-size:.85rem}
-)css"
-        "</style>\n</head>\n<body>\n"
-        + header_html +
-        "<div class=\"layout\">\n"
-        "  <nav class=\"sidebar\">\n"
-        "    <h2>Applications</h2>\n"
-        "    <ul class=\"nav-list\">" + nav_items_html + "</ul>\n"
-        "  </nav>\n"
-        "  <main class=\"main-content\" id=\"main-content\">\n"
-        + welcome_html +
-        "  </main>\n"
-        "</div>\n"
-        "<script>\n"
+        "<!DOCTYPE html>\n"
+        "<html>\n"
+        "<head>\n"
+        "  <meta charset=\"utf-8\">\n"
+        "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+        "  <title>Protoflow Dashboard</title>\n"
+        "  <link rel=\"stylesheet\" href=\"/static/styles.css\">\n"
+        "</head>\n"
+        "<body>\n"
+        + to_html(header) +
+        "  <div class=\"layout\">\n"
+        "    <nav class=\"sidebar\">\n"
+        "      <h2>Applications</h2>\n"
+        "      <ul class=\"nav-list\">\n"
+        + nav_items_html +
+        "      </ul>\n"
+        "    </nav>\n"
+        "    <main class=\"main-content\" id=\"main-content\">\n"
+        + to_html(welcome) +
+        "    </main>\n"
+        "  </div>\n"
+        "  <script>\n"
         R"js(
 async function loadFragment(appName, fragmentId) {
     var main = document.getElementById('main-content');
-    main.innerHTML = '<div class="loading">Loading fragment\u2026</div>';
+    main.innerHTML = '<div class="loading">Loading fragment…</div>';
 
     document.querySelectorAll('.nav-link').forEach(function(el) {
         el.classList.remove('active');
@@ -324,8 +304,23 @@ async function loadFragment(appName, fragmentId) {
         main.innerHTML = '<div class="error-box">Network error: ' + e.message + '</div>';
     }
 }
+
+// Set up click handlers for nav links
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.nav-link').forEach(function(link) {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            var appName = this.getAttribute('data-app');
+            if (appName) {
+                loadFragment(appName, 'status');
+            }
+        });
+    });
+});
 )js"
-        "</script>\n</body>\n</html>";
+        "  </script>\n"
+        "</body>\n"
+        "</html>";
 
     HttpResponse response;
     response.set_html(page);
@@ -634,6 +629,101 @@ bool HTTPService::accepts_json(const HttpRequest& request) const {
     if (it != request.headers.end())
         return it->second.find("application/json") != std::string::npos;
     return false;
+}
+
+// ────────────────────────────────────────────────────────────────
+//  Static file serving
+// ────────────────────────────────────────────────────────────────
+
+std::optional<std::vector<std::byte>> HTTPService::read_static_file(const std::string& filename) {
+    if (static_dir_.empty()) {
+        PROTOFLOW_LOG_DEBUG(*this, "Static directory not configured");
+        return std::nullopt;
+    }
+
+    // Prevent path traversal attacks
+    if (filename.find("..") != std::string::npos || filename.find("//") != std::string::npos) {
+        PROTOFLOW_LOG_WARN(*this, "Attempted path traversal in static file: " << filename);
+        return std::nullopt;
+    }
+
+    std::string filepath = static_dir_ + "/" + filename;
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) {
+        PROTOFLOW_LOG_DEBUG(*this, "Static file not found: " << filepath);
+        return std::nullopt;
+    }
+
+    // Read file into vector
+    file.seekg(0, std::ios::end);
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    std::vector<std::byte> buffer(static_cast<size_t>(size));
+    if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+        PROTOFLOW_LOG_WARN(*this, "Error reading static file: " << filepath);
+        return std::nullopt;
+    }
+
+    PROTOFLOW_LOG_DEBUG(*this, "Served static file: " << filename << " (" << size << " bytes)");
+    return buffer;
+}
+
+HttpResponse HTTPService::serve_static(const HttpRequest& request) {
+    HttpResponse response;
+
+    // Extract filename from path: /static/{filename}
+    std::string_view path = request.path;
+    if (!path.starts_with("/static/")) {
+        response.status_code = 400;
+        response.set_json(R"({"error": "Invalid static path"})");
+        return response;
+    }
+
+    // Get the filename relative to /static/
+    std::string filename(path.substr(8));  // skip "/static/"
+
+    if (filename.empty()) {
+        response.status_code = 400;
+        response.set_json(R"({"error": "No file specified"})");
+        return response;
+    }
+
+    // Try to read the file
+    auto file_data = read_static_file(filename);
+    if (!file_data) {
+        response.status_code = 404;
+        response.set_json(R"({"error": "Static file not found"})");
+        return response;
+    }
+
+    // Determine content type based on file extension
+    std::string content_type = "application/octet-stream";
+    if (filename.ends_with(".css")) {
+        content_type = "text/css; charset=utf-8";
+    } else if (filename.ends_with(".js")) {
+        content_type = "application/javascript; charset=utf-8";
+    } else if (filename.ends_with(".html")) {
+        content_type = "text/html; charset=utf-8";
+    } else if (filename.ends_with(".json")) {
+        content_type = "application/json; charset=utf-8";
+    } else if (filename.ends_with(".png")) {
+        content_type = "image/png";
+    } else if (filename.ends_with(".jpg") || filename.ends_with(".jpeg")) {
+        content_type = "image/jpeg";
+    } else if (filename.ends_with(".svg")) {
+        content_type = "image/svg+xml";
+    } else if (filename.ends_with(".woff")) {
+        content_type = "font/woff";
+    } else if (filename.ends_with(".woff2")) {
+        content_type = "font/woff2";
+    }
+
+    response.status_code = 200;
+    response.headers["Content-Type"] = content_type;
+    response.body = std::move(*file_data);
+
+    return response;
 }
 
 } // namespace protoflow::mainapp

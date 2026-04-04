@@ -96,7 +96,11 @@ private:
     std::string fetch_app_status(const std::string& app_name,
                                   const std::string& base_url);
 
-    /// Check if client accepts HTML
+    /// Serve static files (CSS, JS, etc.)
+    HttpResponse serve_static(const HttpRequest& request);
+
+    /// Read a file from the static directory
+    std::optional<std::vector<std::byte>> read_static_file(const std::string& filename);
     bool accepts_html(const HttpRequest& request) const;
 
     /// Check if client accepts JSON
@@ -115,6 +119,7 @@ private:
     };
 
     bool running_ = false;
+    std::string static_dir_;  // Path to static files directory
     
     // Endpoint registry
     std::unordered_map<std::string, HttpHandler> endpoints_;
