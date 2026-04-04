@@ -131,6 +131,7 @@ void App::route_messages() {
             }
 
             // Otherwise deliver only to services that subscribed to this message type
+            bool delivered = false;
             for (auto& dst_ptr : services) {
                 auto types = dst_ptr->get_message_types();
                 if (types.empty()) {
@@ -142,7 +143,13 @@ void App::route_messages() {
                 for (auto t : types) {
                     if (t == msg.type()) { interested = true; break; }
                 }
-                if (interested) dst_ptr->on_message(protoflow::messaging::Message(msg));
+                if (interested) {
+                    dst_ptr->on_message(protoflow::messaging::Message(msg));
+                    delivered = true;
+                }
+            }
+            if (!delivered) {
+                // Message was not delivered to any service
             }
         }
     }

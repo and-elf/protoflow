@@ -1,5 +1,9 @@
 #include "services/rpc_server_service.hpp"
 #include <protoflow/logging/macros.hpp>
+#include <protoflow/messages.hpp>
+#include <protoflow/app_registration_protocol/messages.hpp>
+#include <cstring>
+#include <iostream>
 
 namespace protoflow::mainapp {
 
@@ -39,7 +43,6 @@ void RpcServerService::stop() {
         server_transport_->close();
     }
     listening_ = false;
-    outbound_.clear();
 }
 
 void RpcServerService::poll() {
@@ -65,7 +68,7 @@ void RpcServerService::poll() {
                             "Client disconnected"
                         }.serialize())
                         .build();
-                    outbound_.push_back(std::move(msg));
+                    write(std::move(msg));
 
                     it = clients_.erase(it);
                 } else {
@@ -98,12 +101,6 @@ void RpcServerService::handle(service::Message&& msg) {
     }
 }
 
-std::vector<service::Message> RpcServerService::generate_outbound() {
-    std::vector<service::Message> result;
-    result.swap(outbound_);
-    return result;
-}
-
 void RpcServerService::accept_new_connections() {
     // Accept new client connections from the server transport
     if (!server_transport_) return;
@@ -123,7 +120,7 @@ void RpcServerService::accept_new_connections() {
             .type(rpc_service::RpcMessageTypes::Connected)
             .payload(rpc_service::RpcConnected{client->id}.serialize())
             .build();
-        outbound_.push_back(std::move(msg));
+        write(std::move(msg));
 
         clients_[client->id] = std::move(client);
     }
@@ -158,7 +155,7 @@ void RpcServerService::try_send_pending(ClientConnection* client) {
                 .type(rpc_service::RpcMessageTypes::Sent)
                 .payload(rpc_service::RpcSent{client->id, bytes_sent}.serialize())
                 .build();
-            outbound_.push_back(std::move(msg));
+            write(std::move(msg));
 
             // Remove from pending
             client->pending_sends.erase(client->pending_sends.begin());
@@ -171,7 +168,7 @@ void RpcServerService::try_send_pending(ClientConnection* client) {
                 .type(rpc_service::RpcMessageTypes::SendFailed)
                 .payload(rpc_service::RpcSendFailed{client->id, "Send failed"}.serialize())
                 .build();
-            outbound_.push_back(std::move(msg));
+            write(std::move(msg));
 
             // Disconnect on error
             client->transport->close();
@@ -188,20 +185,93 @@ void RpcServerService::try_receive(ClientConnection* client) {
 
     // Try to receive data (non-blocking)
     auto result = client->transport->receive(8192);
-
+    
     if (result.has_value()) {
         auto& data = result.value();
 
         if (!data.empty()) {
-            PROTOFLOW_LOG_DEBUG(*this, "Received " << data.size()
-                               << " bytes from client " << client->id);
+            // Try to parse as app registration protocol message
+            if (data.size() >= 4) {
+                // Format: [request:2][size:2][payload]
+                uint16_t cmd_val;
+                uint16_t size_val;
+                std::memcpy(&cmd_val, data.data(), 2);
+                std::memcpy(&size_val, data.data() + 2, 2);
+                
+                if (static_cast<size_t>(size_val) + 4 <= data.size()) {
+                    // Handle register_app (cmd=121) - parse RPC payload and create AppRegistrationEvent
+                    if (cmd_val == 121) {  // 121 = AppRegistrationRequests + register_app
+                        // Parse RPC payload: [name_len:2][name][endpoint_count:4][endpoints...]
+                        const std::byte* rpc_payload = data.data() + 4;
+                        size_t offset = 0;
+                        
+                        // Read app name
+                        if (offset + 2 <= size_val) {
+                            uint16_t name_len;
+                            std::memcpy(&name_len, rpc_payload + offset, 2);
+                            offset += 2;
+                            
+                            if (offset + name_len <= size_val) {
+                                std::string app_name(reinterpret_cast<const char*>(rpc_payload + offset), name_len);
+                                offset += name_len;
+                                
+                                // Read endpoint count
+                                if (offset + 4 <= size_val) {
+                                    uint32_t ep_count;
+                                    std::memcpy(&ep_count, rpc_payload + offset, 4);
+                                    offset += 4;
+                                    
+                                    // Read endpoints
+                                    std::vector<std::string> endpoints;
+                                    for (uint32_t i = 0; i < ep_count && offset + 2 <= size_val; ++i) {
+                                        uint16_t ep_len;
+                                        std::memcpy(&ep_len, rpc_payload + offset, 2);
+                                        offset += 2;
+                                        
+                                        if (offset + ep_len <= size_val) {
+                                            std::string endpoint(reinterpret_cast<const char*>(rpc_payload + offset), ep_len);
+                                            endpoints.push_back(endpoint);
+                                            offset += ep_len;
+                                        }
+                                    }
+                                    
+                                    // Create AppRegistrationEvent and serialize it
+                                    using namespace protoflow::app_registration_protocol;
+                                    AppRegistrationEvent event;
+                                    event.app_name = app_name;
+                                    event.endpoints = endpoints;
+                                    
+                                    auto event_payload = event.serialize();
+                                    auto msg = messaging::MessageBuilder{}
+                                        .type(static_cast<uint16_t>(request::register_app))
+                                        .payload(std::move(event_payload))
+                                        .build();
 
-            // Send received message
+                                    write(std::move(msg));
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // For other message types, queue the raw payload
+                    std::vector<std::byte> payload(data.begin() + 4, data.begin() + 4 + size_val);
+                    
+                    auto msg = messaging::MessageBuilder{}
+                        .type(cmd_val)  // Use the app protocol request type directly
+                        .payload(std::move(payload))
+                        .build();
+                    write(std::move(msg));
+                    return;
+                }
+            }
+            
+            // Not recognized as app protocol, send as generic RPC message
             auto msg = messaging::MessageBuilder{}
                 .type(rpc_service::RpcMessageTypes::Received)
                 .payload(rpc_service::RpcReceived{client->id, std::move(data)}.serialize())
                 .build();
-            outbound_.push_back(std::move(msg));
+            write(std::move(msg));
         }
     }
     else {
@@ -214,7 +284,7 @@ void RpcServerService::try_receive(ClientConnection* client) {
             .type(rpc_service::RpcMessageTypes::Error)
             .payload(rpc_service::RpcError{client->id, result.error()}.serialize())
             .build();
-        outbound_.push_back(std::move(msg));
+        write(std::move(msg));
 
         // Disconnect on error
         client->transport->close();
@@ -233,7 +303,7 @@ void RpcServerService::handle_server_send_request(const rpc_service::RpcSendRequ
                 "Client not found"
             }.serialize())
             .build();
-        outbound_.push_back(std::move(msg));
+        write(std::move(msg));
         return;
     }
 
@@ -249,7 +319,7 @@ void RpcServerService::handle_server_send_request(const rpc_service::RpcSendRequ
                 "Client not connected"
             }.serialize())
             .build();
-        outbound_.push_back(std::move(msg));
+        write(std::move(msg));
         return;
     }
 
@@ -283,7 +353,7 @@ void RpcServerService::handle_server_disconnect_request(const rpc_service::RpcDi
             "Server requested disconnect"
         }.serialize())
         .build();
-    outbound_.push_back(std::move(msg));
+    write(std::move(msg));
 }
 
 } // namespace protoflow::mainapp

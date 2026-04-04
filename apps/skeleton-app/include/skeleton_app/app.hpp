@@ -101,7 +101,11 @@ private:
     AppConfig config_;
 
     // Services
+    std::unique_ptr<messaging::Router> router_;
+    std::unique_ptr<app_registration_client::AppRegistrationClient> registration_client_;
+    std::unique_ptr<protoflow::rpc::transport_interface> hw_transport_;
     std::unique_ptr<hw::hw_client> hw_client_;
+    std::unique_ptr<protoflow::rpc::transport_interface> rpc_transport_;  // TCP connection to main app
 };
 
 } // namespace protoflow::skeleton

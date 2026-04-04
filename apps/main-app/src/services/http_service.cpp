@@ -6,6 +6,7 @@
 #include "services/handlers/static_handler.hpp"
 #include <protoflow/messages.hpp>
 #include <protoflow/logging/macros.hpp>
+#include <iostream>
 #include <sstream>
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -20,7 +21,9 @@ namespace protoflow::mainapp {
 // ────────────────────────────────────────────────────────────────
 
 HTTPService::HTTPService()
-    : Service({HttpMessageTypes::HttpRequest})   // subscribe to request events
+    : Service({HttpMessageTypes::HttpRequest,
+              AppMessageTypes::AppRegistrationEvent,
+              AppMessageTypes::AppUnregistrationEvent})   // subscribe to request and registration events
 {}
 
 // ────────────────────────────────────────────────────────────────
@@ -171,6 +174,33 @@ HttpResponse HTTPService::handle_request(const HttpRequest& request) {
 // ────────────────────────────────────────────────────────────────
 
 void HTTPService::handle(service::Message&& msg) {
+    std::cout << "[DEBUG] HTTPService: Received message type " << msg.type() << "\n";
+    PROTOFLOW_LOG_DEBUG(*this, "HTTPService received message type " << msg.type());
+    
+    // Handle app registration events
+    if (msg.type() == AppMessageTypes::AppRegistrationEvent) {
+        std::cout << "[DEBUG] HTTPService: Got AppRegistrationEvent (type=" << AppMessageTypes::AppRegistrationEvent << ")\n";
+        PROTOFLOW_LOG_INFO(*this, "Received AppRegistrationEvent");
+        if (auto ev = AppRegistrationEvent::deserialize(msg.bytes())) {
+            std::cout << "[DEBUG] HTTPService: Calling handle_app_registration for " << ev->app_name << "\n";
+            handle_app_registration(*ev);
+        } else {
+            PROTOFLOW_LOG_WARN(*this, "Failed to deserialize AppRegistrationEvent");
+        }
+        return;
+    }
+    
+    // Handle app unregistration events
+    if (msg.type() == AppMessageTypes::AppUnregistrationEvent) {
+        if (auto ev = AppUnregistrationEvent::deserialize(msg.bytes())) {
+            handle_app_unregistration(*ev);
+        } else {
+            PROTOFLOW_LOG_WARN(*this, "Failed to deserialize AppUnregistrationEvent");
+        }
+        return;
+    }
+    
+    // Handle HTTP requests
     if (msg.type() != HttpMessageTypes::HttpRequest) {
         PROTOFLOW_LOG_DEBUG(*this, "Ignoring unexpected message type " << msg.type());
         return;

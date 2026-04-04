@@ -29,7 +29,6 @@ public:
 
 protected:
     void handle(service::Message&& msg) override;
-    std::vector<service::Message> generate_outbound() override;
 
 public:
     struct ClientConnection {
@@ -51,7 +50,6 @@ public:
     ConnectionId next_connection_id_{1};
     
     std::unordered_map<ConnectionId, std::unique_ptr<ClientConnection>> clients_;
-    std::vector<service::Message> outbound_;
 };
 
 } // namespace protoflow::mainapp

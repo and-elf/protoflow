@@ -1,9 +1,10 @@
 #include "services/app_registration_service.hpp"
 #include <protoflow/logging/macros.hpp>
+#include <protoflow/messages.hpp>
 #include <nlohmann/json.hpp>
+#include <iostream>
 #include <sstream>
 #include <protoflow/messaging/message.hpp>
-#include <protoflow/messages.hpp>
 
 namespace protoflow::mainapp {
 
@@ -82,9 +83,41 @@ bool AppRegistrationService::register_app(AppRegistration&& registration) {
         // Set timestamp
         registration.last_keepalive = std::chrono::steady_clock::now();
         
+        // Save name and endpoints BEFORE moving registration
+        std::string app_name = registration.name;
+        std::vector<std::string> endpoints = registration.endpoints;
+        
         // Move into map
         registered_apps_[registration.name] = std::move(registration);
+        
+        // Publish registration event to message bus for HTTPService and other subscribers
+        AppRegistrationEvent reg_event;
+        reg_event.app_name = std::move(app_name);
+        reg_event.endpoints = std::move(endpoints);
+        
+        auto payload = reg_event.serialize();
+        auto msg = messaging::MessageBuilder{}
+            .from(service_id_)
+            .type(AppMessageTypes::AppRegistrationEvent)
+            .payload(std::move(payload))
+            .build();
+        pending_outbound_.push_back(std::move(msg));
+        
+        return true;
     }
+    
+    // For re-registration case, also publish the event
+    AppRegistrationEvent reg_event;
+    reg_event.app_name = registration.name;
+    reg_event.endpoints = registration.endpoints;
+    
+    auto payload = reg_event.serialize();
+    auto msg = messaging::MessageBuilder{}
+        .from(service_id_)
+        .type(AppMessageTypes::AppRegistrationEvent)
+        .payload(std::move(payload))
+        .build();
+    pending_outbound_.push_back(std::move(msg));
     
     return true;
 }
@@ -95,6 +128,18 @@ void AppRegistrationService::unregister_app(const std::string& name) {
         app->get().fsm->process(AppEvent::disconnect);
         PROTOFLOW_LOG_INFO(*this, "Unregistering app: " << name);
         registered_apps_.erase(name);
+        
+        // Publish unregistration event to message bus
+        AppUnregistrationEvent unreg_event;
+        unreg_event.app_name = name;
+        
+        auto payload = unreg_event.serialize();
+        auto msg = messaging::MessageBuilder{}
+            .from(service_id_)
+            .type(AppMessageTypes::AppUnregistrationEvent)
+            .payload(std::move(payload))
+            .build();
+        pending_outbound_.push_back(std::move(msg));
     }
 }
 
@@ -182,8 +227,13 @@ void AppRegistrationService::handle(messaging::Message&& msg) {
             break;
 
         case request::register_app:
+            std::cout << "[DEBUG] AppRegistrationService: Received register_app message\n";
+            PROTOFLOW_LOG_INFO(*this, "Received register_app message");
             if (register_app(AppRegistrationEvent::deserialize(msg.bytes()))) {
+                std::cout << "[DEBUG] AppRegistrationService: Successfully registered app from RPC\n";
+                PROTOFLOW_LOG_INFO(*this, "Successfully registered app from RPC");
             } else {
+                std::cout << "[DEBUG] AppRegistrationService: Failed to deserialize AppRegistrationEvent\n";
                 PROTOFLOW_LOG_WARN(*this, "Failed to deserialize AppRegistrationEvent from message");
             }
             break;
@@ -234,8 +284,11 @@ void AppRegistrationService::handle(messaging::Message&& msg) {
 }
 
 std::vector<messaging::Message> AppRegistrationService::generate_outbound() {
-    // No outbound messages generated - using direct method calls instead
-    return {};
+    std::cout << "[DEBUG] AppRegistrationService::generate_outbound called, pending_outbound_ size=" << pending_outbound_.size() << "\n";
+    // Return pending registration/unregistration events to broadcast to HTTPService and other subscribers
+    auto messages = std::move(pending_outbound_);
+    pending_outbound_.clear();
+    return messages;
 }
 
 void AppRegistrationService::check_keepalives() {

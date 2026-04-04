@@ -3,6 +3,7 @@
 #include <protoflow/html.hpp>
 #include <protoflow/transport/tcp.hpp>
 #include <iostream>
+#include <cstring>
 
 namespace protoflow::skeleton {
 
@@ -19,6 +20,68 @@ bool App::initialize() {
     // Initialize message router
     router_ = std::make_unique<messaging::Router>();
 
+    // --- RPC Transport (TCP to main app) ---
+    // Create and establish TCP connection to main app's RPC server
+    auto tcp_client = std::make_unique<transport::tcp::tcp_client>(
+        config_.server_address, config_.server_port);
+    
+    auto tcp_connect_result = tcp_client->connect();
+    if (tcp_connect_result) {
+        std::cout << "  - Connected to RPC server at " 
+                  << config_.server_address << ":" << config_.server_port << "\n";
+        rpc_transport_ = std::move(tcp_client);
+        
+        std::cout << "  - Sending app registration over RPC...\n";
+        
+        // Manually send app registration directly using proper protocol types
+        // Format: [request:2][size:2][payload]
+        // request = AppRegistrationRequests + 1 (register_app = 121)
+        std::vector<std::byte> reg_payload;
+        
+        // Add app name (with length prefix)
+        uint16_t name_len = static_cast<uint16_t>(config_.app_name.size());
+        reg_payload.resize(reg_payload.size() + 2);
+        std::memcpy(reg_payload.data() + reg_payload.size() - 2, &name_len, 2);
+        reg_payload.insert(reg_payload.end(), 
+                          reinterpret_cast<const std::byte*>(config_.app_name.data()),
+                          reinterpret_cast<const std::byte*>(config_.app_name.data() + config_.app_name.size()));
+        
+        // Add endpoint count and endpoints
+        uint32_t ep_count = static_cast<uint32_t>(config_.endpoints.size());
+        reg_payload.resize(reg_payload.size() + 4);
+        std::memcpy(reg_payload.data() + reg_payload.size() - 4, &ep_count, 4);
+        
+        for (const auto& ep : config_.endpoints) {
+            uint16_t ep_len = static_cast<uint16_t>(ep.size());
+            reg_payload.resize(reg_payload.size() + 2);
+            std::memcpy(reg_payload.data() + reg_payload.size() - 2, &ep_len, 2);
+            reg_payload.insert(reg_payload.end(),
+                              reinterpret_cast<const std::byte*>(ep.data()),
+                              reinterpret_cast<const std::byte*>(ep.data() + ep.size()));
+        }
+        
+        // Create the RPC protocol message
+        std::vector<std::byte> rpc_msg;
+        rpc_msg.resize(4 + reg_payload.size());
+        
+        // Use proper protocol value: AppRegistrationRequests (120) + 1 for register_app = 121
+        uint16_t cmd = 121;  // request::register_app
+        uint16_t payload_size = static_cast<uint16_t>(reg_payload.size());
+        std::memcpy(rpc_msg.data(), &cmd, 2);
+        std::memcpy(rpc_msg.data() + 2, &payload_size, 2);
+        if (!reg_payload.empty()) {
+            std::memcpy(rpc_msg.data() + 4, reg_payload.data(), reg_payload.size());
+        }
+        
+        bool sent = rpc_transport_->send(std::span<const std::byte>(rpc_msg));  
+        std::cout << "  - Registration message " << (sent ? "sent" : "FAILED TO SEND") 
+                  << " (cmd=121, size=" << payload_size << ")\n";
+    } else {
+        std::cerr << "  - Failed to connect to RPC server at " 
+                  << config_.server_address << ":" << config_.server_port << "\n";
+        rpc_transport_ = std::move(tcp_client);
+    }
+    
     // --- App Registration Client ---
     // This connects to the main app's RPC server, performs handshake,
     // registers the app, and maintains a heartbeat.
@@ -73,24 +136,41 @@ void App::cycle() {
 }
 
 void App::route_messages() {
-    // Collect outbound from registration client
+    // Send registration client outbound messages over RPC TCP connection
+    size_t msg_count = 0;
     while (auto msg = registration_client_->pop_outbound()) {
-        // Route to interested services
-        auto& services = get_services();
-        for (auto& svc : services) {
-            if (!svc) continue;
-            auto types = svc->get_message_types();
-            if (types.empty()) continue;
-            for (auto t : types) {
-                if (t == msg->type()) {
-                    svc->on_message(messaging::Message(*msg));
-                    break;
-                }
+        msg_count++;
+        std::cout << "[DEBUG] Skeleton: Got outbound message #" << msg_count 
+                  << ", type=" << static_cast<int>(msg->header.type) 
+                  << ", size=" << msg->data.size() << ", connected=" 
+                  << (rpc_transport_ && rpc_transport_->is_connected() ? "yes" : "no") << "\n";
+        
+        if (rpc_transport_ && rpc_transport_->is_connected()) {
+            bool send_ok = rpc_transport_->send(std::span<const std::byte>(msg->data));
+            if (send_ok) {
+                std::cout << "[DEBUG] Skeleton: Sent " << msg->data.size() << " bytes\n";
+            } else {
+                std::cout << "[ERROR] Skeleton: Failed to send\n";
+                rpc_transport_->close();
             }
+        } else {
+            std::cout << "[WARNING] Skeleton: Not connected\n";
         }
     }
 
-    // Collect outbound from other services
+    // Receive data from RPC server and forward to registration client
+    if (rpc_transport_ && rpc_transport_->is_connected()) {
+        auto result = rpc_transport_->receive(8192);
+        if (result.has_value() && !result->empty()) {
+            std::cout << "[DEBUG] Skeleton: Received " << result->size() << " bytes\n";
+            messaging::MessageHeader header;
+            header.type = messaging::MessageTypes::Payload;
+            messaging::Message msg{header, std::move(result.value())};
+            registration_client_->on_message(std::move(msg));
+        }
+    }
+
+    // Route messages between other services if any exist
     auto& services = get_services();
     for (auto& svc : services) {
         if (!svc) continue;

@@ -51,7 +51,7 @@ using HttpHandler = std::function<HttpResponse(const HttpRequest&)>;
 /// Does NOT own any network sockets.
 class HTTPService : public service::Service {
 public:
-    /// Default constructor – subscribes to HttpRequest events.
+    /// Default constructor – subscribes to HttpRequest and app registration events.
     HTTPService();
 
     void start() override;

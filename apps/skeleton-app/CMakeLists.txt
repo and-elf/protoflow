@@ -22,6 +22,7 @@ protoflow_add_app(
         src/app.cpp
 
     LINK_LIBRARIES
+        protoflow::runtime
         protoflow::service
         protoflow::messaging
         protoflow::logging

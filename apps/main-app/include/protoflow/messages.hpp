@@ -19,6 +19,12 @@ namespace HttpMessageTypes {
     constexpr protoflow::messaging::MessageType HttpResponse = 201;
 }
 
+/// Message types for app registration events
+namespace AppMessageTypes {
+    constexpr protoflow::messaging::MessageType AppRegistrationEvent   = 202;
+    constexpr protoflow::messaging::MessageType AppUnregistrationEvent = 203;
+}
+
 /// Lightweight HTTP request event carried over the message bus.
 /// Serialized as: connection_id(8) | method_len(4) | method | path_len(4) | path
 ///                | header_count(4) | [key_len(4) key val_len(4) val]...

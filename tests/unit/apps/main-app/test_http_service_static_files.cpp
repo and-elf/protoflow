@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <gmock/gmock-matchers.h>
 #include "services/http_service.hpp"
 #include "services/handlers/static_handler.hpp"
 #include <filesystem>

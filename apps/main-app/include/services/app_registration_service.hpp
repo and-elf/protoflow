@@ -54,6 +54,9 @@ public:
     /// Get specific app by name (returns optional reference to avoid copy)
     [[nodiscard]] std::optional<std::reference_wrapper<const AppRegistration>> get_app(const std::string& name) const;
 
+    /// Register an application from parsed RPC event (public for direct service-to-service calls)
+    bool register_app(std::optional<AppRegistrationEvent> event);
+
 protected:
     void handle(messaging::Message&& msg) override;
     std::vector<messaging::Message> generate_outbound() override;
@@ -63,8 +66,6 @@ private:
     [[nodiscard]] std::vector<const AppRegistration*> get_registered_apps() const;
     /// Register a new application (takes ownership via move)
     bool register_app(AppRegistration&& registration);
-
-    bool register_app(std::optional<AppRegistrationEvent> event);
 
 
     /// Unregister an application
@@ -83,6 +84,7 @@ private:
     void check_keepalives();
 
     std::unordered_map<std::string, AppRegistration> registered_apps_;
+    std::vector<messaging::Message> pending_outbound_;
     std::chrono::seconds keepalive_timeout_{30};
     std::chrono::milliseconds check_interval_{5000};
     std::chrono::steady_clock::time_point last_check_;

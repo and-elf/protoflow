@@ -51,6 +51,10 @@ namespace {
             std::memcpy(data.data() + 4, payload.data(), payload.size());
         }
         
+        std::cout << "[DEBUG] make_protocol_message: cmd=" << static_cast<int>(cmd) 
+                  << ", payload_size=" << payload.size() 
+                  << ", total_data_size=" << data.size() << "\n";
+        
         messaging::MessageHeader header;
         header.type = messaging::MessageTypes::Payload;
         header.priority = messaging::Priority::Normal;
