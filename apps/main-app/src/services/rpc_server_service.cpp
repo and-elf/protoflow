@@ -4,13 +4,16 @@
 #include <protoflow/app_registration_protocol/messages.hpp>
 #include <cstring>
 #include <iostream>
+#include <chrono>
 
 namespace protoflow::mainapp {
 
 RpcServerService::RpcServerService(
-    std::unique_ptr<rpc::transport_interface> server_transport
+    std::unique_ptr<rpc::transport_interface> server_transport,
+    const RpcServerConfig& config
 )
-    : server_transport_(std::move(server_transport))
+    : client_timeout_seconds_(config.client_timeout_seconds),
+      server_transport_(std::move(server_transport))
 {
 }
 
@@ -49,6 +52,9 @@ void RpcServerService::poll() {
     if (listening_) {
         // Accept new connections
         accept_new_connections();
+
+        // Check for client timeouts
+        check_client_timeouts();
 
         // Poll all clients
         for (auto it = clients_.begin(); it != clients_.end();) {
@@ -112,6 +118,7 @@ void RpcServerService::accept_new_connections() {
         auto client = std::make_unique<ClientConnection>();
         client->id = next_connection_id_++;
         client->transport = std::move(client_transport);
+        client->last_activity_time = std::chrono::steady_clock::now();
 
         PROTOFLOW_LOG_INFO(*this, "Accepted new RPC client connection " << client->id);
 
@@ -190,6 +197,9 @@ void RpcServerService::try_receive(ClientConnection* client) {
         auto& data = result.value();
 
         if (!data.empty()) {
+            // Update last activity time on successful receive
+            client->last_activity_time = std::chrono::steady_clock::now();
+            
             // Try to parse as app registration protocol message
             if (data.size() >= 4) {
                 // Format: [request:2][size:2][payload]
@@ -354,6 +364,40 @@ void RpcServerService::handle_server_disconnect_request(const rpc_service::RpcDi
         }.serialize())
         .build();
     write(std::move(msg));
+}
+
+void RpcServerService::check_client_timeouts() {
+    auto now = std::chrono::steady_clock::now();
+    
+    for (auto it = clients_.begin(); it != clients_.end();) {
+        auto& client = it->second;
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+            now - client->last_activity_time).count();
+        
+        if (elapsed > static_cast<int64_t>(client_timeout_seconds_)) {
+            PROTOFLOW_LOG_WARN(*this, "Client " << client->id << " timeout after " 
+                               << elapsed << " seconds of inactivity");
+            
+            // Send timeout notification
+            auto msg = messaging::MessageBuilder{}
+                .type(rpc_service::RpcMessageTypes::Disconnected)
+                .payload(rpc_service::RpcDisconnected{
+                    client->id,
+                    "Client timeout due to inactivity"
+                }.serialize())
+                .build();
+            write(std::move(msg));
+            
+            // Close client connection
+            if (client->transport) {
+                client->transport->close();
+            }
+            client->pending_sends.clear();
+            it = clients_.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 } // namespace protoflow::mainapp

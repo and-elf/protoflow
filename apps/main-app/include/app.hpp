@@ -5,6 +5,7 @@
 #include <protoflow/logging.hpp>
 #include <protoflow/rpc/protocol.hpp>
 #include <protoflow/runtime/app_base.hpp>
+#include "services/rpc_server_service.hpp"
 
 #include <memory>
 #include <string>
@@ -24,6 +25,9 @@ public:
         bool enable_http = true;
         bool enable_registration = true;
         bool enable_hardware_arbitration = true;
+
+        // RPC Server configuration
+        RpcServerConfig rpc_server_config;
 
         // Optional: Pre-constructed RPC transport (server)
         std::unique_ptr<protoflow::rpc::transport_interface> rpc_server_transport;

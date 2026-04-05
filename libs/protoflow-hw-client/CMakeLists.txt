@@ -12,5 +12,6 @@ protoflow_add_library(
     
     PUBLIC_LINK_LIBRARIES
         protoflow::rpc
+        protoflow::fsm
 )
 

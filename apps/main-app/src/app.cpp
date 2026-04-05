@@ -80,7 +80,9 @@ bool App::initialize() {
 
     // Initialize RPC server service if a transport is provided in config
     if (config_.rpc_server_transport) {
-        auto rpc_server_service = std::make_unique<RpcServerService>(std::move(config_.rpc_server_transport));
+        auto rpc_server_service = std::make_unique<RpcServerService>(
+            std::move(config_.rpc_server_transport),
+            config_.rpc_server_config);
         std::cout << "    * RpcServerService (custom transport)\n";
         get_services().push_back(std::move(rpc_server_service));
     }

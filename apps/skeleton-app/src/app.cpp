@@ -121,6 +121,17 @@ bool App::initialize() {
     std::cout << "  - Starting services...\n";
     registration_client_->start();
 
+    // Wait for successful registration with timeout
+    std::cout << "  - Waiting for app registration (max 10 seconds)...\n";
+    if (!registration_client_->wait_for_registered(10000)) {
+        std::cerr << "  - ERROR: App registration failed: " 
+                  << registration_client_->get_registration_error() << "\n";
+        // Log but don't crash - allow app to continue in degraded mode
+        std::cerr << "  - Will retry registration on next cycle\n";
+    } else {
+        std::cout << "  - App successfully registered!\n";
+    }
+
     std::cout << config_.app_name << " initialized.\n";
     return true;
 }

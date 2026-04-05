@@ -2,6 +2,7 @@
 
 #include "protocol.hpp"
 #include <protoflow/rpc/protocol.hpp>
+#include <protoflow/fsm.hpp>
 #include <expected>
 #include <string>
 #include <vector>
@@ -10,6 +11,84 @@
 #include <cstring>
 
 namespace protoflow::hw {
+
+// Hardware client FSM states
+enum class hw_client_state : int {
+    idle = 0,          // No active access request or hardware access
+    requesting = 1,    // Waiting for access request response
+    accessed = 2,      // Hardware access granted, ready for I/O
+    closing = 3,       // Waiting for release acknowledgment
+    error_state = 4    // Error occurred
+};
+
+// Hardware client FSM events
+enum class hw_client_event : int {
+    request_access = 0,     // Request hardware access
+    access_granted = 1,     // Access granted response received
+    access_denied = 2,      // Access denied response received
+    io_operation = 3,       // I/O operation (read/write/ioctl)
+    io_complete = 4,        // I/O operation completed successfully
+    release = 5,            // Release hardware access
+    release_complete = 6,   // Release acknowledged
+    error_transition = 7    // Error occurred
+};
+
+// NoOp sink for FSM - we don't need observability for this initial impl
+class hw_client_sink {
+public:
+    void emit(const protoflow::fsm::FsmEvent&) const noexcept {}
+};
+
+// Helper for FSM creation - builds the state machine
+inline auto create_hw_client_fsm() {
+    using namespace protoflow::fsm;
+    
+    // Build the FSM structure
+    auto idle_transitions = 
+        when<static_cast<int>(hw_client_state::idle), static_cast<int>(hw_client_event::request_access)>()
+            .to<static_cast<int>(hw_client_state::requesting)>()
+        | when<static_cast<int>(hw_client_state::idle), static_cast<int>(hw_client_event::error_transition)>()
+            .to<static_cast<int>(hw_client_state::error_state)>();
+    
+    auto requesting_transitions =
+        when<static_cast<int>(hw_client_state::requesting), static_cast<int>(hw_client_event::access_granted)>()
+            .to<static_cast<int>(hw_client_state::accessed)>()
+        | when<static_cast<int>(hw_client_state::requesting), static_cast<int>(hw_client_event::access_denied)>()
+            .to<static_cast<int>(hw_client_state::idle)>()
+        | when<static_cast<int>(hw_client_state::requesting), static_cast<int>(hw_client_event::error_transition)>()
+            .to<static_cast<int>(hw_client_state::error_state)>();
+    
+    auto accessed_transitions =
+        when<static_cast<int>(hw_client_state::accessed), static_cast<int>(hw_client_event::io_operation)>()
+            .to<static_cast<int>(hw_client_state::accessed)>()
+        | when<static_cast<int>(hw_client_state::accessed), static_cast<int>(hw_client_event::io_complete)>()
+            .to<static_cast<int>(hw_client_state::accessed)>()
+        | when<static_cast<int>(hw_client_state::accessed), static_cast<int>(hw_client_event::release)>()
+            .to<static_cast<int>(hw_client_state::closing)>()
+        | when<static_cast<int>(hw_client_state::accessed), static_cast<int>(hw_client_event::error_transition)>()
+            .to<static_cast<int>(hw_client_state::error_state)>();
+    
+    auto closing_transitions =
+        when<static_cast<int>(hw_client_state::closing), static_cast<int>(hw_client_event::release_complete)>()
+            .to<static_cast<int>(hw_client_state::idle)>()
+        | when<static_cast<int>(hw_client_state::closing), static_cast<int>(hw_client_event::error_transition)>()
+            .to<static_cast<int>(hw_client_state::error_state)>();
+    
+    auto error_transitions =
+        when<static_cast<int>(hw_client_state::error_state), static_cast<int>(hw_client_event::release)>()
+            .to<static_cast<int>(hw_client_state::idle)>();
+    
+    auto all_transitions = idle_transitions | requesting_transitions | accessed_transitions 
+                         | closing_transitions | error_transitions
+                         | otherwise().to<static_cast<int>(hw_client_state::error_state)>();
+    
+    return make_fsm(
+        "hw_client",
+        all_transitions,
+        hw_client_sink{},
+        static_cast<int>(hw_client_state::idle)
+    );
+}
 
 // Hardware resource handle wrapper with RAII semantics
 class hw_handle {
@@ -63,17 +142,35 @@ enum class hw_error {
     return "Unknown error";
 }
 
-// Hardware arbitration client
+// Hardware arbitration client with FSM-based state management
 class hw_client {
 public:
     explicit hw_client(rpc::transport_interface& transport) 
-        : transport_(transport) {}
+        : transport_(transport), fsm_(create_hw_client_fsm()) {}
+
+    // Get current FSM state
+    [[nodiscard]] hw_client_state current_state() const noexcept {
+        return static_cast<hw_client_state>(fsm_.state());
+    }
 
     // Request hardware access
     [[nodiscard]] std::expected<hw_access_result, hw_error>
     request_access(std::string_view resource,
                    protocol::access_mode mode = protocol::access_mode::exclusive,
                    std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) {
+        
+        // Validate state: can only request from idle state
+        if (current_state() != hw_client_state::idle) {
+            return std::unexpected(hw_error::invalid_operation);
+        }
+        
+        // Transition to requesting state
+        fsm_.process(static_cast<int>(hw_client_event::request_access));
+        
+        if (current_state() != hw_client_state::requesting) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
+            return std::unexpected(hw_error::invalid_operation);
+        }
         
         protocol::request_hw_access_msg msg{};
         msg.mode = static_cast<uint32_t>(mode);
@@ -94,12 +191,14 @@ public:
         if (!send_with_header(header, std::span{
                 reinterpret_cast<const std::byte*>(&msg),
                 protocol::request_hw_access_msg::wire_size})) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::transport_error);
         }
         
         // Receive response
         auto resp_header = receive_header();
         if (!resp_header) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::transport_error);
         }
         
@@ -109,10 +208,13 @@ public:
         if (resp_cmd == protocol::cmd::hw_access_granted) {
             auto payload = receive_payload(resp_header->payload_size);
             if (!payload || payload->size() < protocol::hw_access_granted_msg::wire_size) {
+                fsm_.process(static_cast<int>(hw_client_event::error_transition));
                 return std::unexpected(hw_error::protocol_error);
             }
             
             auto* grant = reinterpret_cast<const protocol::hw_access_granted_msg*>(payload->data());
+            fsm_.process(static_cast<int>(hw_client_event::access_granted));
+            
             return hw_access_result{
                 .handle = hw_handle{grant->handle},
                 .timeout = std::chrono::milliseconds{grant->timeout_ms},
@@ -121,12 +223,16 @@ public:
         } else if (resp_cmd == protocol::cmd::hw_access_denied) {
             auto payload = receive_payload(resp_header->payload_size);
             if (!payload || payload->size() < protocol::hw_access_denied_msg::wire_size) {
+                fsm_.process(static_cast<int>(hw_client_event::error_transition));
                 return std::unexpected(hw_error::protocol_error);
             }
             
             auto* denied = reinterpret_cast<const protocol::hw_access_denied_msg*>(payload->data());
+            fsm_.process(static_cast<int>(hw_client_event::access_denied));
+            
             return std::unexpected(map_error_code(denied->reason_code));
         } else {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::protocol_error);
         }
     }
@@ -136,6 +242,19 @@ public:
     release(hw_handle handle) {
         if (!handle.is_valid()) {
             return std::unexpected(hw_error::invalid_handle);
+        }
+        
+        // Validate state: can only release from accessed state
+        if (current_state() != hw_client_state::accessed) {
+            return std::unexpected(hw_error::invalid_operation);
+        }
+        
+        // Transition to closing state
+        fsm_.process(static_cast<int>(hw_client_event::release));
+        
+        if (current_state() != hw_client_state::closing) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
+            return std::unexpected(hw_error::invalid_operation);
         }
         
         protocol::hw_release_msg msg{};
@@ -150,29 +269,37 @@ public:
         if (!send_with_header(header, std::span{
                 reinterpret_cast<const std::byte*>(&msg),
                 protocol::hw_release_msg::wire_size})) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::transport_error);
         }
         
         // Wait for acknowledgment
         auto resp_header = receive_header();
         if (!resp_header) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::transport_error);
         }
         
         auto resp_cmd = static_cast<protocol::cmd>(resp_header->cmd);
         if (resp_cmd != protocol::cmd::hw_release_ack) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::protocol_error);
         }
         
         auto payload = receive_payload(resp_header->payload_size);
         if (!payload || payload->size() < protocol::hw_release_ack_msg::wire_size) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::protocol_error);
         }
         
         auto* ack = reinterpret_cast<const protocol::hw_release_ack_msg*>(payload->data());
         if (ack->status != 0) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::io_error);
         }
+        
+        // Transition to idle state
+        fsm_.process(static_cast<int>(hw_client_event::release_complete));
         
         return {};
     }
@@ -184,9 +311,17 @@ public:
             return std::unexpected(hw_error::invalid_handle);
         }
         
+        // Validate state: can only write from accessed state
+        if (current_state() != hw_client_state::accessed) {
+            return std::unexpected(hw_error::invalid_operation);
+        }
+        
         if (data.size() > max_io_size) {
             return std::unexpected(hw_error::buffer_too_large);
         }
+        
+        // Process I/O operation event
+        fsm_.process(static_cast<int>(hw_client_event::io_operation));
         
         protocol::hw_write_msg msg{};
         msg.handle = handle.id();
@@ -208,29 +343,37 @@ public:
         );
         
         if (!send_with_header(header, payload)) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::transport_error);
         }
         
         // Wait for acknowledgment
         auto resp_header = receive_header();
         if (!resp_header) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::transport_error);
         }
         
         auto resp_cmd = static_cast<protocol::cmd>(resp_header->cmd);
         if (resp_cmd != protocol::cmd::hw_write_ack) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::protocol_error);
         }
         
         auto resp_payload = receive_payload(resp_header->payload_size);
         if (!resp_payload || resp_payload->size() < protocol::hw_write_ack_msg::wire_size) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::protocol_error);
         }
         
         auto* ack = reinterpret_cast<const protocol::hw_write_ack_msg*>(resp_payload->data());
         if (ack->status != 0) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::io_error);
         }
+        
+        // Mark I/O complete
+        fsm_.process(static_cast<int>(hw_client_event::io_complete));
         
         return ack->bytes_written;
     }
@@ -242,9 +385,17 @@ public:
             return std::unexpected(hw_error::invalid_handle);
         }
         
+        // Validate state: can only read from accessed state
+        if (current_state() != hw_client_state::accessed) {
+            return std::unexpected(hw_error::invalid_operation);
+        }
+        
         if (max_length > max_io_size) {
             return std::unexpected(hw_error::buffer_too_large);
         }
+        
+        // Process I/O operation event
+        fsm_.process(static_cast<int>(hw_client_event::io_operation));
         
         protocol::hw_read_msg msg{};
         msg.handle = handle.id();
@@ -260,33 +411,39 @@ public:
         if (!send_with_header(header, std::span{
                 reinterpret_cast<const std::byte*>(&msg),
                 protocol::hw_read_msg::wire_size})) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::transport_error);
         }
         
         // Wait for response
         auto resp_header = receive_header();
         if (!resp_header) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::transport_error);
         }
         
         auto resp_cmd = static_cast<protocol::cmd>(resp_header->cmd);
         if (resp_cmd != protocol::cmd::hw_read_response) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::protocol_error);
         }
         
         auto payload = receive_payload(resp_header->payload_size);
         if (!payload || payload->size() < protocol::hw_read_response_msg::wire_size) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::protocol_error);
         }
         
         auto* resp = reinterpret_cast<const protocol::hw_read_response_msg*>(payload->data());
         if (resp->status != 0) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::io_error);
         }
         
         // Extract data
         size_t data_offset = protocol::hw_read_response_msg::wire_size;
         if (payload->size() < data_offset + resp->bytes_read) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::protocol_error);
         }
         
@@ -294,6 +451,9 @@ public:
             payload->begin() + static_cast<std::ptrdiff_t>(data_offset),
             payload->begin() + static_cast<std::ptrdiff_t>(data_offset + resp->bytes_read)
         );
+        
+        // Mark I/O complete
+        fsm_.process(static_cast<int>(hw_client_event::io_complete));
         
         return data;
     }
@@ -305,9 +465,17 @@ public:
             return std::unexpected(hw_error::invalid_handle);
         }
         
+        // Validate state: can only ioctl from accessed state
+        if (current_state() != hw_client_state::accessed) {
+            return std::unexpected(hw_error::invalid_operation);
+        }
+        
         if (arg.size() > max_io_size) {
             return std::unexpected(hw_error::buffer_too_large);
         }
+        
+        // Process I/O operation event
+        fsm_.process(static_cast<int>(hw_client_event::io_operation));
         
         protocol::hw_ioctl_msg msg{};
         msg.handle = handle.id();
@@ -329,33 +497,39 @@ public:
         );
         
         if (!send_with_header(header, payload)) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::transport_error);
         }
         
         // Wait for response
         auto resp_header = receive_header();
         if (!resp_header) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::transport_error);
         }
         
         auto resp_cmd = static_cast<protocol::cmd>(resp_header->cmd);
         if (resp_cmd != protocol::cmd::hw_ioctl_response) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::protocol_error);
         }
         
         auto resp_payload = receive_payload(resp_header->payload_size);
         if (!resp_payload || resp_payload->size() < protocol::hw_ioctl_response_msg::wire_size) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::protocol_error);
         }
         
         auto* resp = reinterpret_cast<const protocol::hw_ioctl_response_msg*>(resp_payload->data());
         if (resp->status != 0) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::io_error);
         }
         
         // Extract response data
         size_t data_offset = protocol::hw_ioctl_response_msg::wire_size;
         if (resp_payload->size() < data_offset + resp->data_length) {
+            fsm_.process(static_cast<int>(hw_client_event::error_transition));
             return std::unexpected(hw_error::protocol_error);
         }
         
@@ -364,6 +538,9 @@ public:
             resp_payload->begin() + static_cast<std::ptrdiff_t>(data_offset + resp->data_length)
         );
         
+        // Mark I/O complete
+        fsm_.process(static_cast<int>(hw_client_event::io_complete));
+        
         return data;
     }
 
@@ -371,6 +548,7 @@ private:
     static constexpr size_t max_io_size = 1024 * 1024; // 1 MB
     
     rpc::transport_interface& transport_;
+    decltype(create_hw_client_fsm()) fsm_;
     
     [[nodiscard]] bool send_with_header(const rpc::rpc_header& header,
                                          std::span<const std::byte> payload) {

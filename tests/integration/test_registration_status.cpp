@@ -140,7 +140,8 @@ TEST(RegistrationStatus, StatusEndpointShowsRegisteredApps) {
     pid_t server = spawn(MAIN_APP_EXECUTABLE, {
         "-a", TEST_HOST, "-p", std::to_string(TEST_HTTP_PORT),
         "--rpc-server-address", TEST_HOST,
-        "--rpc-server-port", std::to_string(TEST_RPC_PORT)
+        "--rpc-server-port", std::to_string(TEST_RPC_PORT),
+        "--rpc-server-client-timeout-seconds", "5"
     });
     ASSERT_GT(server, 0);
     ASSERT_TRUE(wait_for_port(TEST_HOST, TEST_RPC_PORT))
@@ -201,7 +202,8 @@ TEST(RegistrationStatus, StatusEndpointShowsMultipleApps) {
     pid_t server = spawn(MAIN_APP_EXECUTABLE, {
         "-a", TEST_HOST, "-p", std::to_string(TEST_HTTP_PORT + 10),
         "--rpc-server-address", TEST_HOST,
-        "--rpc-server-port", std::to_string(TEST_RPC_PORT + 10)
+        "--rpc-server-port", std::to_string(TEST_RPC_PORT + 10),
+        "--rpc-server-client-timeout-seconds", "5"
     });
     ASSERT_GT(server, 0);
     ASSERT_TRUE(wait_for_port(TEST_HOST, TEST_RPC_PORT + 10))
@@ -279,7 +281,8 @@ TEST(RegistrationStatus, ApiStatusEndpointWorks) {
     pid_t server = spawn(MAIN_APP_EXECUTABLE, {
         "-a", TEST_HOST, "-p", std::to_string(TEST_HTTP_PORT + 20),
         "--rpc-server-address", TEST_HOST,
-        "--rpc-server-port", std::to_string(TEST_RPC_PORT + 20)
+        "--rpc-server-port", std::to_string(TEST_RPC_PORT + 20),
+        "--rpc-server-client-timeout-seconds", "5"
     });
     ASSERT_GT(server, 0);
     ASSERT_TRUE(wait_for_port(TEST_HOST, TEST_RPC_PORT + 20))

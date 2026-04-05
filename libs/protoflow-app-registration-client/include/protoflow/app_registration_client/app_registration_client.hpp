@@ -58,6 +58,14 @@ public:
     
     /// Logging support
     std::string name() const { return "AppRegistrationClient[" + config_.app_name + "]"; }
+    
+    /// Wait for registration to complete with timeout
+    /// @param timeout_ms Timeout in milliseconds
+    /// @return true if successfully registered, false on timeout or error
+    bool wait_for_registered(uint32_t timeout_ms = 5000) noexcept;
+    
+    /// Get last registration error message
+    [[nodiscard]] std::string get_registration_error() const noexcept { return registration_error_; }
 
 protected:
     /// Handle incoming messages (from runtime)
@@ -89,6 +97,9 @@ private:
     std::chrono::steady_clock::time_point last_heartbeat_;
     std::chrono::steady_clock::time_point connection_start_;
     uint32_t reconnect_count_;
+    
+    // Error tracking
+    std::string registration_error_;
     
     // FSM action handlers
     void on_connect();

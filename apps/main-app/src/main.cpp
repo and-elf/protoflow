@@ -22,6 +22,7 @@ int main(int argc, char* argv[]) {
     std::string rpc_server_transport = "tcp";
     std::string rpc_server_address = "0.0.0.0";
     uint16_t rpc_tcp_port = 9123;
+    uint32_t rpc_server_client_timeout = 30;  // Default: 30 seconds
 
     bool show_version = false;
     app.add_flag("-v,--version", show_version, "Show version information");
@@ -43,6 +44,7 @@ int main(int argc, char* argv[]) {
     app.add_option("--rpc-server-transport", rpc_server_transport, "RPC server transport type (tcp, unix)");
     app.add_option("--rpc-server-address", rpc_server_address, "RPC server listen address (for TCP) or socket path (for Unix)");
     app.add_option("--rpc-server-port", rpc_tcp_port, "RPC server TCP port (default: 9123)");
+    app.add_option("--rpc-server-client-timeout-seconds", rpc_server_client_timeout, "RPC server client inactivity timeout in seconds (default: 30)");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -60,6 +62,7 @@ int main(int argc, char* argv[]) {
     config.enable_http = !disable_http;
     config.enable_registration = !disable_registration;
     config.enable_hardware_arbitration = !disable_hardware;
+    config.rpc_server_config.client_timeout_seconds = rpc_server_client_timeout;
 
 
     if (show_version) {

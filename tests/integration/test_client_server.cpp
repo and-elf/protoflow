@@ -145,7 +145,8 @@ TEST(ClientServerIntegration, MainAppHttpResponds) {
     pid_t server = spawn(MAIN_APP_EXECUTABLE, {
         "-a", TEST_HOST, "-p", std::to_string(TEST_HTTP_PORT),
         "--rpc-server-address", TEST_HOST,
-        "--rpc-server-port", std::to_string(TEST_RPC_PORT)
+        "--rpc-server-port", std::to_string(TEST_RPC_PORT),
+        "--rpc-server-client-timeout-seconds", "5"
     });
     ASSERT_GT(server, 0);
 
@@ -165,7 +166,8 @@ TEST(ClientServerIntegration, SkeletonAppConnectsToMainApp) {
     pid_t server = spawn(MAIN_APP_EXECUTABLE, {
         "-a", TEST_HOST, "-p", std::to_string(TEST_HTTP_PORT + 1),
         "--rpc-server-address", TEST_HOST,
-        "--rpc-server-port", std::to_string(TEST_RPC_PORT + 1)
+        "--rpc-server-port", std::to_string(TEST_RPC_PORT + 1),
+        "--rpc-server-client-timeout-seconds", "5"
     });
     ASSERT_GT(server, 0);
 
@@ -203,7 +205,8 @@ TEST(ClientServerIntegration, MultipleClientsConnect) {
     pid_t server = spawn(MAIN_APP_EXECUTABLE, {
         "-a", TEST_HOST, "-p", std::to_string(TEST_HTTP_PORT + 2),
         "--rpc-server-address", TEST_HOST,
-        "--rpc-server-port", std::to_string(TEST_RPC_PORT + 2)
+        "--rpc-server-port", std::to_string(TEST_RPC_PORT + 2),
+        "--rpc-server-client-timeout-seconds", "5"
     });
     ASSERT_GT(server, 0);
     ASSERT_TRUE(wait_for_port(TEST_HOST, TEST_RPC_PORT + 2));
@@ -239,7 +242,8 @@ TEST(ClientServerIntegration, ClientSurvivesServerRestart) {
     pid_t server = spawn(MAIN_APP_EXECUTABLE, {
         "-a", TEST_HOST, "-p", std::to_string(TEST_HTTP_PORT + 3),
         "--rpc-server-address", TEST_HOST,
-        "--rpc-server-port", std::to_string(TEST_RPC_PORT + 3)
+        "--rpc-server-port", std::to_string(TEST_RPC_PORT + 3),
+        "--rpc-server-client-timeout-seconds", "5"
     });
     ASSERT_GT(server, 0);
     ASSERT_TRUE(wait_for_port(TEST_HOST, TEST_RPC_PORT + 3));
@@ -264,7 +268,8 @@ TEST(ClientServerIntegration, ClientSurvivesServerRestart) {
     server = spawn(MAIN_APP_EXECUTABLE, {
         "-a", TEST_HOST, "-p", std::to_string(TEST_HTTP_PORT + 3),
         "--rpc-server-address", TEST_HOST,
-        "--rpc-server-port", std::to_string(TEST_RPC_PORT + 3)
+        "--rpc-server-port", std::to_string(TEST_RPC_PORT + 3),
+        "--rpc-server-client-timeout-seconds", "5"
     });
     ASSERT_GT(server, 0);
     ASSERT_TRUE(wait_for_port(TEST_HOST, TEST_RPC_PORT + 3));

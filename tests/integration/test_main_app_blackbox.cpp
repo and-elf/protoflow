@@ -93,7 +93,8 @@ TEST(MainAppBlackbox, HttpRespondsToGetRoot) {
     // Launch main app with HTTP on 18080 and RPC on 19123 (non-default ports)
     std::vector<std::string> args = {
         "-a", "127.0.0.1", "-p", "18080",
-        "--rpc-server-address", "127.0.0.1", "--rpc-server-port", "19123"
+        "--rpc-server-address", "127.0.0.1", "--rpc-server-port", "19123",
+        "--rpc-server-client-timeout-seconds", "5"
     };
     pid_t pid = spawn_main_app(MAIN_APP_EXECUTABLE, args);
     ASSERT_GT(pid, 0);

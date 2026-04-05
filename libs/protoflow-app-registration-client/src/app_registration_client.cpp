@@ -14,6 +14,8 @@
 #include <cstring>
 #include <functional>
 #include <queue>
+#include <thread>
+#include <sstream>
 
 namespace protoflow::app_registration_client {
 
@@ -516,6 +518,39 @@ void AppRegistrationClient::process_incoming_data(std::span<const std::byte> dat
     messaging::MessageHeader header;
     header.type = messaging::MessageTypes::Payload;
     handle(service::Message{header, data});
+}
+
+// ============================================================================
+// Wait for Registration
+// ============================================================================
+
+bool AppRegistrationClient::wait_for_registered(uint32_t timeout_ms) noexcept {
+    auto start = std::chrono::steady_clock::now();
+    auto timeout_duration = std::chrono::milliseconds(timeout_ms);
+    
+    while (std::chrono::steady_clock::now() - start < timeout_duration) {
+        // Poll to drive the FSM
+        poll();
+        
+        if (state_ == State::Registered) {
+            PROTOFLOW_LOG_INFO(*this, "[" << name() << "] Successfully registered");
+            return true;
+        }
+        
+        if (state_ == State::Failed) {
+            PROTOFLOW_LOG_ERROR(*this, "[" << name() << "] Registration failed");
+            registration_error_ = "FSM reached Failed state";
+            return false;
+        }
+        
+        // Yield to other threads/tasks
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    
+    PROTOFLOW_LOG_ERROR(*this, "[" << name() << "] Registration timeout after " << timeout_ms << "ms (state=" 
+                         << static_cast<int>(state_) << ")");
+    registration_error_ = "Timeout waiting for registration";
+    return false;
 }
 
 // ============================================================================
