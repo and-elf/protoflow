@@ -141,15 +141,28 @@ TEST(HwClientTest, ReleaseSuccess) {
     mock_transport transport;
     hw_client client{transport};
     
-    // Queue release ack
+    // First, transition to accessed state by requesting access
+    hw_proto::hw_access_granted_msg access_response{};
+    access_response.handle = 123;
+    access_response.timeout_ms = 5000;
+    access_response.capabilities = static_cast<uint32_t>(hw_proto::capability::read) |
+                                    static_cast<uint32_t>(hw_proto::capability::write);
+    access_response.reserved = 0;
+    
+    transport.queue_message(hw_proto::cmd::hw_access_granted, access_response);
+    
+    auto access_result = client.request_access("/dev/ttyUSB0");
+    ASSERT_TRUE(access_result.has_value());
+    
+    // Now queue release ack for the release call
     hw_proto::hw_release_ack_msg response{};
     response.handle = 123;
     response.status = 0;
     
     transport.queue_message(hw_proto::cmd::hw_release_ack, response);
     
-    // Release handle
-    hw_handle handle{123};
+    // Release handle with proper state
+    hw_handle handle = access_result->handle;
     auto result = client.release(handle);
     
     ASSERT_TRUE(result.has_value());
@@ -172,7 +185,20 @@ TEST(HwClientTest, WriteSuccess) {
     mock_transport transport;
     hw_client client{transport};
     
-    // Queue write ack
+    // First, transition to accessed state by requesting access
+    hw_proto::hw_access_granted_msg access_response{};
+    access_response.handle = 123;
+    access_response.timeout_ms = 5000;
+    access_response.capabilities = static_cast<uint32_t>(hw_proto::capability::read) |
+                                    static_cast<uint32_t>(hw_proto::capability::write);
+    access_response.reserved = 0;
+    
+    transport.queue_message(hw_proto::cmd::hw_access_granted, access_response);
+    
+    auto access_result = client.request_access("/dev/ttyUSB0");
+    ASSERT_TRUE(access_result.has_value());
+    
+    // Now queue write ack for the write call
     hw_proto::hw_write_ack_msg response{};
     response.handle = 123;
     response.bytes_written = 10;
@@ -181,8 +207,8 @@ TEST(HwClientTest, WriteSuccess) {
     
     transport.queue_message(hw_proto::cmd::hw_write_ack, response);
     
-    // Write data
-    hw_handle handle{123};
+    // Write data with proper state
+    hw_handle handle = access_result->handle;
     std::vector<std::byte> data(10, std::byte{0x42});
     auto result = client.write(handle, data);
     
@@ -194,6 +220,19 @@ TEST(HwClientTest, WriteSuccess) {
 TEST(HwClientTest, ReadSuccess) {
     mock_transport transport;
     hw_client client{transport};
+    
+    // First, transition to accessed state by requesting access
+    hw_proto::hw_access_granted_msg access_response{};
+    access_response.handle = 123;
+    access_response.timeout_ms = 5000;
+    access_response.capabilities = static_cast<uint32_t>(hw_proto::capability::read) |
+                                    static_cast<uint32_t>(hw_proto::capability::write);
+    access_response.reserved = 0;
+    
+    transport.queue_message(hw_proto::cmd::hw_access_granted, access_response);
+    
+    auto access_result = client.request_access("/dev/ttyUSB0");
+    ASSERT_TRUE(access_result.has_value());
     
     // Prepare response with data
     hw_proto::hw_read_response_msg response{};
@@ -224,8 +263,8 @@ TEST(HwClientTest, ReadSuccess) {
     
     transport.queue_response(std::move(payload_data));
     
-    // Read data
-    hw_handle handle{123};
+    // Read data with proper state
+    hw_handle handle = access_result->handle;
     auto result = client.read(handle, 256);
     
     ASSERT_TRUE(result.has_value());
@@ -241,6 +280,19 @@ TEST(HwClientTest, ScopedHwAccess) {
     mock_transport transport;
     hw_client client{transport};
     
+    // First, transition to accessed state by requesting access
+    hw_proto::hw_access_granted_msg access_response{};
+    access_response.handle = 123;
+    access_response.timeout_ms = 5000;
+    access_response.capabilities = static_cast<uint32_t>(hw_proto::capability::read) |
+                                    static_cast<uint32_t>(hw_proto::capability::write);
+    access_response.reserved = 0;
+    
+    transport.queue_message(hw_proto::cmd::hw_access_granted, access_response);
+    
+    auto access_result = client.request_access("/dev/ttyUSB0");
+    ASSERT_TRUE(access_result.has_value());
+    
     // Queue release ack for RAII destructor
     hw_proto::hw_release_ack_msg response{};
     response.handle = 123;
@@ -249,8 +301,7 @@ TEST(HwClientTest, ScopedHwAccess) {
     transport.queue_message(hw_proto::cmd::hw_release_ack, response);
     
     {
-        hw_handle handle{123};
-        scoped_hw_access scoped{client, handle};
+        scoped_hw_access scoped{client, access_result->handle};
         
         EXPECT_EQ(scoped.handle().id(), 123u);
     }
@@ -277,7 +328,20 @@ TEST(HwClientTest, BufferTooLarge) {
     mock_transport transport;
     hw_client client{transport};
     
-    hw_handle handle{123};
+    // First, transition to accessed state by requesting access
+    hw_proto::hw_access_granted_msg access_response{};
+    access_response.handle = 123;
+    access_response.timeout_ms = 5000;
+    access_response.capabilities = static_cast<uint32_t>(hw_proto::capability::read) |
+                                    static_cast<uint32_t>(hw_proto::capability::write);
+    access_response.reserved = 0;
+    
+    transport.queue_message(hw_proto::cmd::hw_access_granted, access_response);
+    
+    auto access_result = client.request_access("/dev/ttyUSB0");
+    ASSERT_TRUE(access_result.has_value());
+    
+    hw_handle handle = access_result->handle;
     
     // Try to write more than max_io_size (1 MB)
     std::vector<std::byte> large_data(2 * 1024 * 1024, std::byte{0});
