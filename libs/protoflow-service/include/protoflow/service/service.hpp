@@ -129,10 +129,11 @@ protected:
         using namespace protoflow::messaging;
         
         auto log_msg = LogMessage{level, text};
-        // TODO: Serialize log message to bytes
+        auto data = log_msg.serialize();
         auto msg = MessageBuilder{}
             .from(service_id_)
             .type(MessageTypes::Log)
+            .payload(std::as_bytes(std::span(data)))
             .build();
         
         write(std::move(msg));
