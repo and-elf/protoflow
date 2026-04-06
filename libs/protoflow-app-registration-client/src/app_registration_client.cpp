@@ -354,8 +354,8 @@ void AppRegistrationClient::on_connect() {
     PROTOFLOW_LOG_INFO(*this, "Initiating connection to " << config_.server_address << ":" << config_.server_port);
     connection_start_ = std::chrono::steady_clock::now();
     
-    // In a real implementation, this would initiate TCP connection
-    // For now, immediately transition to Connected (will be replaced with actual TCP transport)
+    // Connection logic handled by transport managed by App
+    // Just transition to connected when connection is established
     process_event(Event::Connected);
 }
 
@@ -377,18 +377,32 @@ void AppRegistrationClient::on_connected() {
 void AppRegistrationClient::on_handshake_complete() {
     PROTOFLOW_LOG_INFO(*this, "Handshake complete, registering app: " << config_.app_name);
     
-    // Send REGISTER_APP message
-    register_app_msg msg{};
-    std::strncpy(msg.name, config_.app_name.c_str(), sizeof(msg.name) - 1);
-    msg.endpoint_count = static_cast<uint32_t>(config_.endpoints.size());
+    // Build REGISTER_APP message with endpoints
+    std::vector<std::byte> payload;
     
-    // For now, just send the base message (endpoints would be appended in full impl)
-    auto payload = std::span<const std::byte>(
-        reinterpret_cast<const std::byte*>(&msg),
-        sizeof(msg)
-    );
+    // App name (with length prefix)
+    uint16_t name_len = static_cast<uint16_t>(config_.app_name.size());
+    payload.resize(payload.size() + 2);
+    std::memcpy(payload.data() + payload.size() - 2, &name_len, 2);
+    payload.insert(payload.end(), 
+                  reinterpret_cast<const std::byte*>(config_.app_name.data()),
+                  reinterpret_cast<const std::byte*>(config_.app_name.data() + config_.app_name.size()));
     
-    outbound_queue_.push(make_protocol_message(request::register_app, payload));
+    // Endpoint count and endpoints
+    uint32_t ep_count = static_cast<uint32_t>(config_.endpoints.size());
+    payload.resize(payload.size() + 4);
+    std::memcpy(payload.data() + payload.size() - 4, &ep_count, 4);
+    
+    for (const auto& ep : config_.endpoints) {
+        uint16_t ep_len = static_cast<uint16_t>(ep.size());
+        payload.resize(payload.size() + 2);
+        std::memcpy(payload.data() + payload.size() - 2, &ep_len, 2);
+        payload.insert(payload.end(),
+                      reinterpret_cast<const std::byte*>(ep.data()),
+                      reinterpret_cast<const std::byte*>(ep.data() + ep.size()));
+    }
+    
+    outbound_queue_.push(make_protocol_message(request::register_app, std::span<const std::byte>(payload)));
 }
 
 void AppRegistrationClient::on_registration_ack() {

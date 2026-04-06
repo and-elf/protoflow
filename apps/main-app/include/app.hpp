@@ -38,20 +38,11 @@ public:
     /// Initialize runtime and all services
     bool initialize() override;
 
-protected:
-    /// Execute one scheduler cycle
-    void cycle() override;
-
-    void route_messages() override;
-
 private:
     Config config_;
     
     // Message router
     std::unique_ptr<messaging::Router> router_;
-    
-    // Logging (non-owning pointer, ownership held in services_)
-    logging::LoggingService* logger_ = nullptr;
 };
 
 } // namespace protoflow::mainapp

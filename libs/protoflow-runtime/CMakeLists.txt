@@ -16,4 +16,6 @@ protoflow_add_library(
     PUBLIC_LINK_LIBRARIES
         protoflow::messaging
         protoflow::service
+        protoflow::rpc
+        protoflow::app-registration-client
 )

@@ -8,8 +8,20 @@
 #include <cstddef>
 #include <span>
 
+namespace protoflow::logging {
+class LoggingService;
+}
+
 namespace protoflow::service {
 class Service;
+}
+
+namespace protoflow::rpc {
+class transport_interface;
+}
+
+namespace protoflow::app_registration_client {
+class AppRegistrationClient;
 }
 
 namespace protoflow::runtime {
@@ -89,15 +101,17 @@ public:
 protected:
     /// Execute one cycle of the main loop
     /// Default implementation:
-    /// 1. Polls all services
-    /// 2. Calls route_messages()
-    /// 3. Sleeps if cycle finished early
+    /// 1. Polls all services (including RPC transport polling)
+    /// 2. Routes messages between services and RPC transport
+    /// 3. Calls route_messages() for app-specific routing
+    /// 4. Sleeps if cycle finished early
     /// 
     /// Override to add custom behavior, but call AppBase::cycle() first
     virtual void cycle();
 
     /// Route messages between services
-    /// Default implementation is empty - override in subclasses
+    /// Default implementation handles AppRegistrationClient routing to RPC transport
+    /// Override in subclasses to add app-specific routing
     virtual void route_messages();
 
     /// Access to services list (for subclasses)
@@ -108,6 +122,42 @@ protected:
     const std::vector<std::unique_ptr<service::Service>>& get_services() const noexcept {
         return services_;
     }
+
+    /// Get RPC transport (may be null if not configured)
+    protoflow::rpc::transport_interface* get_rpc_transport() const noexcept {
+        return static_cast<protoflow::rpc::transport_interface*>(rpc_transport_);
+    }
+
+    /// Set RPC transport (called by subclasses during initialize)
+    void set_rpc_transport(std::unique_ptr<protoflow::rpc::transport_interface> transport) noexcept {
+        rpc_transport_ = transport.release();
+    }
+
+    /// Setup RPC transport with connection and logging
+    /// Handles connect attempt, logs result, and stores transport
+    /// \param transport The transport to connect and manage
+    /// \param server_desc Optional description for logging (e.g., "RPC server at 127.0.0.1:9999")
+    void setup_rpc_transport(std::unique_ptr<protoflow::rpc::transport_interface> transport,
+                             std::string_view server_desc = "") noexcept;
+
+    /// Get logging service (for apps that need direct access)
+    [[nodiscard]] logging::LoggingService* get_logger() const noexcept {
+        return logger_;
+    }
+
+    /// Initialize logging service (call at start of app's initialize())
+    /// Creates LoggingService and adds it to services_, returns pointer for optional configuration
+    logging::LoggingService* setup_logging() noexcept;
+
+    /// Unified logging methods (route to logger service if available)
+    void log_trace(const std::string& msg) noexcept;
+    void log_debug(const std::string& msg) noexcept;
+    void log_info(const std::string& msg) noexcept;
+    void log_warn(const std::string& msg) noexcept;
+    void log_error(const std::string& msg) noexcept;
+    void log_fatal(const std::string& msg) noexcept;
+
+    std::vector<std::unique_ptr<service::Service>> services_;
 
 private:
     /// Global signal handler (static bridge to instance method)
@@ -120,8 +170,14 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<AppBase*> g_instance_{nullptr};
 
-protected:
-    std::vector<std::unique_ptr<service::Service>> services_;
+    // RPC transport for connecting to main app (optional, owned by AppBase)
+    void* rpc_transport_{nullptr};
+
+    // Logging service (owned by AppBase, stored in services_)
+    logging::LoggingService* logger_{nullptr};
+
+    // Helper functions for message routing
+    void route_rpc_messages();
 };
 
 } // namespace protoflow::runtime

@@ -85,6 +85,31 @@ public:
         max_stored_logs_ = max;
     }
 
+    /// Public logging methods for framework/app use
+    void log_trace(const std::string& text) {
+        process_log({Level::Trace, text}, service_id_);
+    }
+
+    void log_debug(const std::string& text) {
+        process_log({Level::Debug, text}, service_id_);
+    }
+
+    void log_info(const std::string& text) {
+        process_log({Level::Info, text}, service_id_);
+    }
+
+    void log_warn(const std::string& text) {
+        process_log({Level::Warn, text}, service_id_);
+    }
+
+    void log_error(const std::string& text) {
+        process_log({Level::Error, text}, service_id_);
+    }
+
+    void log_fatal(const std::string& text) {
+        process_log({Level::Fatal, text}, service_id_);
+    }
+
 protected:
     void handle(service::Message&& msg) override {
         // Handle log messages
