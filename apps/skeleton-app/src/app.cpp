@@ -126,58 +126,31 @@ bool App::initialize() {
 }
 
 void App::cycle() {
-    // Poll registration client (handles connection, heartbeats, etc.)
     if (registration_client_) {
         registration_client_->poll();
     }
 
-    // Call base class cycle() to poll all other services
-    AppBase::cycle();
-}
-
-void App::route_messages() {
-    // Send registration client outbound messages over RPC TCP connection
-    size_t msg_count = 0;
+    // transport I/O for the registration client
     while (auto msg = registration_client_->pop_outbound()) {
-        msg_count++;
-        std::cout << "[DEBUG] Skeleton: Got outbound message #" << msg_count 
-                  << ", type=" << static_cast<int>(msg->header.type) 
-                  << ", size=" << msg->data.size() << ", connected=" 
-                  << (rpc_transport_ && rpc_transport_->is_connected() ? "yes" : "no") << "\n";
-        
         if (rpc_transport_ && rpc_transport_->is_connected()) {
-            bool send_ok = rpc_transport_->send(std::span<const std::byte>(msg->data));
-            if (send_ok) {
-                std::cout << "[DEBUG] Skeleton: Sent " << msg->data.size() << " bytes\n";
-            } else {
-                std::cout << "[ERROR] Skeleton: Failed to send\n";
+            if (!rpc_transport_->send(std::span<const std::byte>(msg->data))) {
                 rpc_transport_->close();
+                break;
             }
-        } else {
-            std::cout << "[WARNING] Skeleton: Not connected\n";
         }
     }
 
-    // Receive data from RPC server and forward to registration client
     if (rpc_transport_ && rpc_transport_->is_connected()) {
         auto result = rpc_transport_->receive(8192);
         if (result.has_value() && !result->empty()) {
-            std::cout << "[DEBUG] Skeleton: Received " << result->size() << " bytes\n";
             messaging::MessageHeader header;
             header.type = messaging::MessageTypes::Payload;
-            messaging::Message msg{header, std::move(result.value())};
-            registration_client_->on_message(std::move(msg));
+            messaging::Message m{header, std::move(result.value())};
+            registration_client_->on_message(std::move(m));
         }
     }
 
-    // Route messages between other services if any exist
-    auto& services = get_services();
-    for (auto& svc : services) {
-        if (!svc) continue;
-        while (auto msg = svc->pop_outbound()) {
-            // Could route back to registration client or other services
-        }
-    }
+    AppBase::cycle();
 }
 
 // --- rpc_app interface ---

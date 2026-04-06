@@ -91,11 +91,7 @@ public:
     [[nodiscard]] const AppConfig& config() const noexcept { return config_; }
 
 protected:
-    /// Override cycle to add app-specific logic after base cycle
     void cycle() override;
-
-    /// Override route_messages for app-specific message routing
-    void route_messages() override;
 
 private:
     AppConfig config_;

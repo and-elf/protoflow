@@ -38,8 +38,6 @@ protected:
     /// Execute one scheduler cycle
     void cycle() override;
 
-    void route_messages() override;
-
 private:
     Config config_;
     

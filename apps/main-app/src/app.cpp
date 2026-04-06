@@ -96,63 +96,11 @@ bool App::initialize() {
 }
 
 void App::cycle() {
-    // One message per service per cycle (deterministic execution)
     for (auto& service : get_services()) {
         service->poll();
     }
 
-    // Route messages
     route_messages();
-}
-
-void App::route_messages() {
-    // Collect outbound messages from all services and route to interested services.
-    auto& services = get_services();
-    for (auto& service_ptr : services) {
-        auto* service = service_ptr.get();
-
-        // Pop outbound messages until none remain
-        while (true) {
-            auto opt = service->pop_outbound();
-            if (!opt.has_value()) break;
-
-            auto msg = std::move(*opt);
-
-            // Determine whether any service declares explicit subscriptions
-            bool any_subscriptions = false;
-            for (auto& dst_ptr : services) {
-                auto types = dst_ptr->get_message_types();
-                if (!types.empty()) { any_subscriptions = true; break; }
-            }
-
-            // If no service declared subscriptions, fall back to broadcast
-            if (!any_subscriptions) {
-                continue;
-            }
-
-            // Otherwise deliver only to services that subscribed to this message type
-            bool delivered = false;
-            for (auto& dst_ptr : services) {
-                auto types = dst_ptr->get_message_types();
-                if (types.empty()) {
-                    continue;
-                }
-
-                // Check membership
-                bool interested = false;
-                for (auto t : types) {
-                    if (t == msg.type()) { interested = true; break; }
-                }
-                if (interested) {
-                    dst_ptr->on_message(protoflow::messaging::Message(msg));
-                    delivered = true;
-                }
-            }
-            if (!delivered) {
-                // Message was not delivered to any service
-            }
-        }
-    }
 }
 
 } // namespace protoflow::mainapp

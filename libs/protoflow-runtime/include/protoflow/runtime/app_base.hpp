@@ -26,8 +26,7 @@ namespace protoflow::runtime {
 /// 1. Inherit from AppBase
 /// 2. Override initialize() to set up services
 /// 3. Optionally override cycle() to add custom logic
-/// 4. Optionally override route_messages() for custom routing
-/// 5. Call run() from main() to start the app
+/// 4. Call run() from main() to start the app
 ///
 /// Example:
 /// ```cpp
@@ -96,8 +95,7 @@ protected:
     /// Override to add custom behavior, but call AppBase::cycle() first
     virtual void cycle();
 
-    /// Route messages between services
-    /// Default implementation is empty - override in subclasses
+    /// Route messages between services based on subscriptions
     virtual void route_messages();
 
     /// Access to services list (for subclasses)

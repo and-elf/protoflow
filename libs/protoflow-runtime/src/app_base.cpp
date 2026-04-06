@@ -78,7 +78,29 @@ void AppBase::cycle() {
 }
 
 void AppBase::route_messages() {
-    // Default implementation is empty - subclasses override for custom routing
+    for (auto& src : services_) {
+        if (!src) continue;
+
+        while (auto opt = src->pop_outbound()) {
+            auto msg = std::move(*opt);
+
+            bool delivered = false;
+            for (auto& dst : services_) {
+                if (!dst) continue;
+                auto types = dst->get_message_types();
+                if (types.empty()) continue;
+
+                for (auto t : types) {
+                    if (t == msg.type()) {
+                        dst->on_message(messaging::Message(msg));
+                        delivered = true;
+                        break;
+                    }
+                }
+            }
+            (void)delivered;
+        }
+    }
 }
 
 void AppBase::on_signal(int signal) {
