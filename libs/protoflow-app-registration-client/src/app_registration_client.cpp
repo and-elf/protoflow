@@ -624,7 +624,7 @@ void AppRegistrationClient::reset_backoff() {
 
 std::chrono::milliseconds AppRegistrationClient::calculate_backoff_delay() {
     // Exponential backoff: delay * 2^(attempt - 1), up to 5 minutes
-    auto delay = config_.reconnect_delay;
+    auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(config_.reconnect_delay);
     for (uint32_t i = 1; i < reconnect_count_; ++i) {
         delay = std::chrono::milliseconds(delay.count() * 2);
         if (delay > std::chrono::minutes(5)) {
