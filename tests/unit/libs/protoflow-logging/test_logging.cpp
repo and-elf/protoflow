@@ -4,6 +4,18 @@
 
 using namespace protoflow;
 
+// minimal service stub to test log() -> outbound queue
+class StubService : public service::Service {
+public:
+    using Service::log;
+    using Service::log_info;
+    using Service::log_error;
+    using Service::log_warn;
+    using Service::set_service_id;
+
+    void handle(service::Message&&) override {}
+};
+
 TEST(LoggingTest, LogLevelToString) {
     EXPECT_STREQ("TRACE", logging::to_string(logging::Level::Trace));
     EXPECT_STREQ("DEBUG", logging::to_string(logging::Level::Debug));
@@ -117,7 +129,86 @@ TEST(LoggingTest, LoggingServiceClear) {
     }
     
     EXPECT_EQ(3, logger.get_logs().size());
-    
+
     logger.clear_logs();
     EXPECT_EQ(0, logger.get_logs().size());
+}
+
+TEST(ServiceLogTest, LogSerializesToOutbound) {
+    StubService svc;
+    svc.set_service_id(42);
+
+    svc.log(logging::Level::Error, "something broke");
+
+    auto msg = svc.pop_outbound();
+    ASSERT_TRUE(msg.has_value());
+    EXPECT_EQ(msg->header.type, messaging::MessageTypes::Log);
+    EXPECT_EQ(msg->header.source, 42u);
+    EXPECT_GT(msg->size(), 0u);
+
+    auto parsed = messaging::LogMessage::deserialize(msg->bytes());
+    EXPECT_EQ(parsed.level, messaging::LogLevel::Error);
+    EXPECT_EQ(parsed.text, "something broke");
+}
+
+TEST(ServiceLogTest, ConvenienceMethodsSerialize) {
+    StubService svc;
+    svc.set_service_id(7);
+
+    svc.log_info("hello");
+    svc.log_warn("careful");
+    svc.log_error("boom");
+
+    // all three should be queued
+    for (auto [lvl, txt] : std::vector<std::pair<messaging::LogLevel, std::string>>{
+        {messaging::LogLevel::Info, "hello"},
+        {messaging::LogLevel::Warn, "careful"},
+        {messaging::LogLevel::Error, "boom"},
+    }) {
+        auto msg = svc.pop_outbound();
+        ASSERT_TRUE(msg.has_value()) << "missing outbound for: " << txt;
+        EXPECT_EQ(msg->header.type, messaging::MessageTypes::Log);
+
+        auto parsed = messaging::LogMessage::deserialize(msg->bytes());
+        EXPECT_EQ(parsed.level, lvl);
+        EXPECT_EQ(parsed.text, txt);
+    }
+
+    // queue should be empty now
+    EXPECT_FALSE(svc.pop_outbound().has_value());
+}
+
+TEST(ServiceLogTest, EmptyTextSerializes) {
+    StubService svc;
+
+    svc.log(logging::Level::Trace, "");
+
+    auto msg = svc.pop_outbound();
+    ASSERT_TRUE(msg.has_value());
+
+    auto parsed = messaging::LogMessage::deserialize(msg->bytes());
+    EXPECT_EQ(parsed.level, messaging::LogLevel::Trace);
+    EXPECT_TRUE(parsed.text.empty());
+}
+
+TEST(ServiceLogTest, TimestampPreservedThroughSerialization) {
+    StubService svc;
+
+    auto before = std::chrono::system_clock::now();
+    svc.log_info("ts check");
+    auto after = std::chrono::system_clock::now();
+
+    auto msg = svc.pop_outbound();
+    ASSERT_TRUE(msg.has_value());
+
+    auto parsed = messaging::LogMessage::deserialize(msg->bytes());
+    auto ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        parsed.timestamp.time_since_epoch()).count();
+    auto before_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        before.time_since_epoch()).count();
+    auto after_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        after.time_since_epoch()).count();
+
+    EXPECT_GE(ts_ms, before_ms);
+    EXPECT_LE(ts_ms, after_ms);
 }
