@@ -4,6 +4,7 @@
 #include <protoflow/rpc/protocol.hpp>
 #include <protoflow/messaging/message.hpp>
 #include <protoflow/logging/logging.hpp>
+#include <protoflow/config/logging_config.hpp>
 #include <iostream>
 #include <thread>
 #include <csignal>
@@ -15,7 +16,7 @@ thread_local AppBase* g_app_instance = nullptr;
 
 void AppBase::signal_handler_impl(int signal) {
     if (auto* app = g_app_instance; app != nullptr) {
-        std::cout << "\nReceived signal " << signal << ", shutting down...\n";
+        app->log_info("\nReceived signal " + std::to_string(signal) + ", shutting down...\n");
         app->on_signal(signal);
     }
 }
@@ -43,7 +44,7 @@ void AppBase::run() {
     }
 
     running_.store(true);
-    std::cout << "Application started (main loop running)\n";
+    log_info("Application started (main loop running)\n");
 
     while (running_.load()) {
         auto cycle_start = std::chrono::steady_clock::now();
@@ -56,11 +57,11 @@ void AppBase::run() {
         }
     }
 
-    std::cout << "Application stopped.\n";
+    log_info("Application stopped.\n");
 }
 
 void AppBase::shutdown() noexcept {
-    std::cout << "Shutting down application...\n";
+    log_info("Shutting down application...\n");
     running_.store(false);
 
     // Stop all services
@@ -68,7 +69,7 @@ void AppBase::shutdown() noexcept {
         service->stop();
     }
 
-    std::cout << "All services stopped.\n";
+    log_info("All services stopped.\n");
 }
 
 void AppBase::cycle() {
@@ -171,16 +172,18 @@ void AppBase::route_rpc_messages() {
 void AppBase::setup_rpc_transport(std::unique_ptr<protoflow::rpc::transport_interface> transport,
                                    std::string_view server_desc) noexcept {
     if (!transport) {
-        std::cerr << "[WARN]   RPC transport is null\n";
+        log_error("RPC transport is null\n");
         return;
     }
 
     std::string desc_str = server_desc.empty() ? "RPC server" : std::string(server_desc);
     
     if (transport->is_connected()) {
-        std::cerr << "[INFO]   Connected to " << desc_str << "\n";
+        log_info("Connected to " + desc_str + "\n");
+         set_rpc_transport(std::move(transport));
     } else {
-        std::cerr << "[ERROR]  Failed to connect to " << desc_str << "\n";
+        log_error("Failed to connect to " + desc_str);
+         return;
     }
     
     set_rpc_transport(std::move(transport));
@@ -191,8 +194,12 @@ void AppBase::on_signal(int signal) {
     shutdown();
 }
 
-logging::LoggingService* AppBase::setup_logging() noexcept {
+logging::LoggingService* AppBase::setup_logging(const config::LoggingConfig& log_config) noexcept {
     auto logging_service = std::make_unique<logging::LoggingService>();
+    logging_service->set_min_level(log_config.min_level);
+    logging_service->set_console_output(log_config.console_output);
+    logging_service->set_max_stored_logs(log_config.max_stored_logs);
+    
     logger_ = logging_service.get();
     services_.push_back(std::move(logging_service));
     return logger_;

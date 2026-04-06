@@ -2,6 +2,7 @@
 
 #include <protoflow/html.hpp>
 #include <protoflow/transport/tcp.hpp>
+#include <protoflow/config/logging_config.hpp>
 #include <iostream>
 #include <cstring>
 
@@ -17,7 +18,7 @@ App::~App() = default;
 bool App::initialize() {
     
     // Initialize logging (AppBase framework service)
-    setup_logging();
+    setup_logging(config::LoggingConfig{});
     log_info("Initializing " + config_.app_name);
     
     // Initialize message router

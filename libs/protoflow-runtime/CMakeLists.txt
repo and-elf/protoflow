@@ -18,4 +18,5 @@ protoflow_add_library(
         protoflow::service
         protoflow::rpc
         protoflow::app-registration-client
+        protoflow::config
 )

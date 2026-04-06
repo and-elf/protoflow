@@ -17,41 +17,35 @@ App::App(Config config)
 }
 
 bool App::initialize() {
-    std::cout << "Initializing Protoflow Main Application Runtime...\n";
-
+    log_info("Initializing Protoflow Main Application Runtime...\n");
+    
     // Initialize logging (AppBase handles service creation and management)
-    std::cout << "  - Setting up logging...\n";
+    log_info("  - Setting up logging...\n");
     auto log_config = config::load_logging_config(config_.log_config_path);
     if (!log_config) {
-        std::cerr << "      Warning: Failed to load logging config from " 
-                  << config_.log_config_path << "\n";
-        std::cerr << "      Using default logging configuration\n";
+        std::cerr << "Warning: Failed to load logging config from " 
+        << config_.log_config_path << "\nUsing default logging configuration.\n";
     }
+    setup_logging(log_config.value_or(config::LoggingConfig{}));
     
-    auto logging_config = log_config.value_or(config::LoggingConfig{});
-    auto logging_service = setup_logging();
-    logging_service->set_console_output(logging_config.console_output);
-    logging_service->set_min_level(logging_config.min_level);
-    logging_service->set_max_stored_logs(logging_config.max_stored_logs);
-
     // Create services
-    std::cout << "  - Creating services:\n";
+    log_info("  - Creating services:\n");
 
     if (config_.enable_registration) {
-        std::cout << "    * ApplicationRegistrationService\n";
+        log_info("    * ApplicationRegistrationService\n");
         auto app_reg_service = std::make_unique<AppRegistrationService>();
         get_services().push_back(std::move(app_reg_service));
     }
 
     if (config_.enable_hardware_arbitration) {
-        std::cout << "    * HardwareArbitrationService\n";
+        log_info("    * HardwareArbitrationService\n");
         
         // Load hardware configuration
         auto hw_config = config::load_hardware_config(config_.hardware_config_path);
         if (!hw_config) {
-            std::cerr << "      Warning: Failed to load hardware config from " 
-                      << config_.hardware_config_path << "\n";
-            std::cerr << "      Starting with empty hardware configuration\n";
+            log_warn("      Warning: Failed to load hardware config from " 
+                     + config_.hardware_config_path);
+            log_warn("      Starting with empty hardware configuration");
         }
         
         auto hw_service = std::make_unique<HardwareArbitrationService>(
@@ -65,9 +59,8 @@ bool App::initialize() {
         auto http_service = std::make_unique<HTTPService>();
         get_services().push_back(std::move(http_service));
 
-        std::cout << "    * HttpListenerService (listening on "
-                  << config_.listen_address << ":"
-                  << config_.listen_port << ")\n";
+        log_info("    * HttpListenerService (listening on " + config_.listen_address + ":" +
+                 std::to_string(config_.listen_port) + ")\n");
         auto listener = std::make_unique<HttpListenerService>(
             config_.listen_address, config_.listen_port);
         get_services().push_back(std::move(listener));
@@ -78,11 +71,11 @@ bool App::initialize() {
         auto rpc_server_service = std::make_unique<RpcServerService>(
             std::move(config_.rpc_server_transport),
             config_.rpc_server_config);
-        std::cout << "    * RpcServerService (custom transport)\n";
+        log_info("    * RpcServerService (custom transport)\n");
         get_services().push_back(std::move(rpc_server_service));
     }
 
-    std::cout << "Runtime initialized successfully.\n";
+    log_info("Runtime initialized successfully.\n");
     return true;
 }
 

@@ -8,6 +8,10 @@
 #include <cstddef>
 #include <span>
 
+namespace protoflow::config {
+struct LoggingConfig;
+}
+
 namespace protoflow::logging {
 class LoggingService;
 }
@@ -146,8 +150,9 @@ protected:
     }
 
     /// Initialize logging service (call at start of app's initialize())
-    /// Creates LoggingService and adds it to services_, returns pointer for optional configuration
-    logging::LoggingService* setup_logging() noexcept;
+    /// Creates LoggingService, applies configuration, adds it to services_, returns pointer
+    /// \param config Logging configuration (min level, console output, max stored logs)
+    logging::LoggingService* setup_logging(const config::LoggingConfig& config) noexcept;
 
     /// Unified logging methods (route to logger service if available)
     void log_trace(const std::string& msg) noexcept;
