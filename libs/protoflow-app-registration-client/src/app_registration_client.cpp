@@ -244,6 +244,8 @@ AppRegistrationClient::AppRegistrationClient(Config config)
     , config_(std::move(config))
     , state_(State::Disconnected)
     , reconnect_count_(0)
+    , current_backoff_delay_(config_.reconnect_delay)
+    , reconnect_timer_initialized_(false)
 {
     PROTOFLOW_LOG_INFO(*this, "Creating AppRegistrationClient: " << config_to_string(config_));
     create_fsm();
@@ -290,6 +292,8 @@ void AppRegistrationClient::poll() {
         check_heartbeat_timer();
     } else if (state_ == State::Connecting) {
         check_connection_timeout();
+    } else if (state_ == State::Reconnecting) {
+        check_reconnect_timer();
     }
 }
 
@@ -389,7 +393,7 @@ void AppRegistrationClient::on_handshake_complete() {
 
 void AppRegistrationClient::on_registration_ack() {
     last_heartbeat_ = std::chrono::steady_clock::now();
-    reconnect_count_ = 0;
+    reset_backoff();
 }
 
 void AppRegistrationClient::on_heartbeat_tick() {
@@ -416,15 +420,19 @@ void AppRegistrationClient::on_heartbeat_ack() {
 void AppRegistrationClient::on_disconnected() {
     PROTOFLOW_LOG_WARN(*this, "Connection lost");
     
-    // Will transition to Reconnecting state via FSM
+    // Set up reconnection timer when entering Reconnecting state
+    // (This will be called as a transition handler when we go to Reconnecting)
 }
 
 void AppRegistrationClient::on_reconnect() {
     ++reconnect_count_;
-    PROTOFLOW_LOG_INFO(*this, "Reconnecting (attempt #" << reconnect_count_ << ")");
+    PROTOFLOW_LOG_INFO(*this, "Reconnecting (attempt #" << reconnect_count_ 
+                              << " with " << current_backoff_delay_.count() << "ms delay)");
     
-    if (reconnect_count_ >= config_.max_reconnect_attempts) {
-        PROTOFLOW_LOG_ERROR(*this, "Max reconnect attempts reached");
+    // Check if we've exceeded max attempts (0 = infinite)
+    if (config_.max_reconnect_attempts > 0 && reconnect_count_ >= config_.max_reconnect_attempts) {
+        PROTOFLOW_LOG_ERROR(*this, "Max reconnect attempts (" << config_.max_reconnect_attempts 
+                                   << ") reached");
         process_event(Event::FatalError);
     }
 }
@@ -574,6 +582,57 @@ void AppRegistrationClient::check_connection_timeout() {
         PROTOFLOW_LOG_ERROR(*this, "[" << name() << "] Connection timeout");
         process_event(Event::FatalError);
     }
+}
+
+void AppRegistrationClient::check_reconnect_timer() {
+    // Initialize timer on first check in Reconnecting state
+    if (!reconnect_timer_initialized_) {
+        reconnect_timer_ = std::chrono::steady_clock::now();
+        reconnect_timer_initialized_ = true;
+        PROTOFLOW_LOG_WARN(*this, "Waiting " << current_backoff_delay_.count() 
+                                  << "ms before reconnection attempt");
+        return;
+    }
+    
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - reconnect_timer_);
+    
+    if (elapsed >= current_backoff_delay_) {
+        PROTOFLOW_LOG_DEBUG(*this, "Reconnect timer elapsed, triggering reconnection");
+        reconnect_timer_initialized_ = false;  // Reset for next Reconnecting state
+        process_event(Event::Reconnect);
+        
+        // Reset timer for next backoff attempt
+        reconnect_timer_ = std::chrono::steady_clock::now();
+        
+        // Increase backoff for next attempt (capped at 5 minutes)
+        auto next_delay = current_backoff_delay_;
+        next_delay = std::chrono::milliseconds(next_delay.count() * 2);
+        const auto max_delay = std::chrono::minutes(5);
+        if (next_delay > max_delay) {
+            next_delay = max_delay;
+        }
+        current_backoff_delay_ = next_delay;
+    }
+}
+
+void AppRegistrationClient::reset_backoff() {
+    current_backoff_delay_ = config_.reconnect_delay;
+    reconnect_count_ = 0;
+    PROTOFLOW_LOG_DEBUG(*this, "Backoff reset");
+}
+
+std::chrono::milliseconds AppRegistrationClient::calculate_backoff_delay() {
+    // Exponential backoff: delay * 2^(attempt - 1), up to 5 minutes
+    auto delay = config_.reconnect_delay;
+    for (uint32_t i = 1; i < reconnect_count_; ++i) {
+        delay = std::chrono::milliseconds(delay.count() * 2);
+        if (delay > std::chrono::minutes(5)) {
+            delay = std::chrono::minutes(5);
+            break;
+        }
+    }
+    return delay;
 }
 
 } // namespace protoflow::app_registration_client

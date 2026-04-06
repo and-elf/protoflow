@@ -96,7 +96,10 @@ private:
     // Timing
     std::chrono::steady_clock::time_point last_heartbeat_;
     std::chrono::steady_clock::time_point connection_start_;
+    std::chrono::steady_clock::time_point reconnect_timer_;
     uint32_t reconnect_count_;
+    std::chrono::milliseconds current_backoff_delay_;
+    bool reconnect_timer_initialized_;
     
     // Error tracking
     std::string registration_error_;
@@ -130,6 +133,11 @@ private:
     // Timing checks
     void check_heartbeat_timer();
     void check_connection_timeout();
+    void check_reconnect_timer();
+    
+    // Reconnection management
+    void reset_backoff();
+    std::chrono::milliseconds calculate_backoff_delay();
 };
 
 // Template implementation for testing

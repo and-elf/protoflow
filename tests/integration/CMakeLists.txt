@@ -114,3 +114,45 @@ if(PROTOFLOW_BUILD_SKELETON_APP AND PROTOFLOW_BUILD_MAIN_APP)
 
     gtest_discover_tests(test_registration_status)
 endif()
+
+# RPC Communication integration tests
+# Tests core RPC protocol: hello handshake, message exchange, concurrent clients, etc.
+add_executable(test_rpc_communication
+    test_rpc_communication.cpp
+)
+
+target_link_libraries(test_rpc_communication
+    PRIVATE
+        protoflow::rpc
+        protoflow::rpc-client
+        protoflow::rpc-server
+        protoflow::transport-tcp
+        GTest::gtest
+        GTest::gtest_main
+)
+
+gtest_discover_tests(test_rpc_communication)
+
+# App Registration Lifecycle integration tests
+# Tests full lifecycle: registration, re-registration after crash, server restart resilience,
+# timeout handling, concurrent registrations, and clean shutdown.
+if(PROTOFLOW_BUILD_SKELETON_APP AND PROTOFLOW_BUILD_MAIN_APP)
+    add_executable(test_registration_lifecycle
+        test_registration_lifecycle.cpp
+    )
+
+    target_link_libraries(test_registration_lifecycle
+        PRIVATE
+            GTest::gtest
+            GTest::gtest_main
+            nlohmann_json::nlohmann_json
+    )
+
+    target_compile_definitions(test_registration_lifecycle
+        PRIVATE
+            MAIN_APP_EXECUTABLE="$<TARGET_FILE:protoflow-main-app>"
+            SKELETON_APP_EXECUTABLE="$<TARGET_FILE:protoflow-skeleton-app>"
+    )
+
+    gtest_discover_tests(test_registration_lifecycle)
+endif()

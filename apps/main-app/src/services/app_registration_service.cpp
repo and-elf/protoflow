@@ -284,7 +284,6 @@ void AppRegistrationService::handle(messaging::Message&& msg) {
 }
 
 std::vector<messaging::Message> AppRegistrationService::generate_outbound() {
-    std::cout << "[DEBUG] AppRegistrationService::generate_outbound called, pending_outbound_ size=" << pending_outbound_.size() << "\n";
     // Return pending registration/unregistration events to broadcast to HTTPService and other subscribers
     auto messages = std::move(pending_outbound_);
     pending_outbound_.clear();
