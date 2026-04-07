@@ -203,3 +203,42 @@ cd build && ctest
 ## Contributing
 
 [To be determined]
+
+## 🧩 Components
+
+### AppBase
+[Paste Agent's description of AppBase here]
+
+### Libraries
+- **lib-name**: [Agent description]
+- **lib-name**: [Agent description]
+
+### Getting Started (Skeleton App)
+You can find a reference implementation in `apps/skeleton-app`. Use this as a base for building new services...
+
+---
+
+## 🏗 Project Architecture & Components
+
+### AppBase (`protoflow::runtime::AppBase`)
+`AppBase` is the core base class for all Protoflow applications. It manages the boilerplate of application lifecycles, including:
+* **Lifecycle & Signal Handling**: Graceful shutdown via `SIGINT`/`SIGTERM`.
+* **Deterministic Execution**: A main loop that executes `.cycle()` at configurable tick rates.
+* **Message Routing**: Acts as the central hub for isolated services and RPC transports.
+* **Component Management**: Initializes logging, service lists, and RPC transport clients.
+
+### 📚 Core Libraries (`/libs`)
+Protoflow follows a strictly isolated, message-first architecture:
+* **protoflow-runtime**: The "heart" containing the message router and service scheduler.
+* **protoflow-service**: Provides base `Service` classes and thread-safe `Mailbox<T>`.
+* **protoflow-messaging**: Abstractions for inbound/outbound message queues.
+* **protoflow-fsm**: Compile-time Finite State Machine library for protocol-driven behavior.
+* **protoflow-rpc**: Transport-agnostic client/server model for inter-app communication.
+* **protoflow-logging**: Structured logging system for deep observability.
+
+### 🚀 Skeleton App (`/apps/skeleton-app`)
+The `skeleton-app` serves as the official template and reference implementation.
+* **Purpose**: Demonstrates app registration flows, hardware access (`protoflow-hw-client`), and RPC server loops.
+* **Usage**: Run it via CLI (e.g., `protoflow-skeleton-app -s <ip> -p <port>`) or use it as a template by duplicating the directory for new service development.
+
+---
