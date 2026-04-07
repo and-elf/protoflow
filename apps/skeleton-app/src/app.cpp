@@ -29,11 +29,15 @@ bool App::initialize() {
     auto tcp_client = std::make_unique<transport::tcp::tcp_client>(
         config_.server_address, config_.server_port);
     
-    tcp_client->connect();  // Attempt connection (logging handled in setup_rpc_transport)
-    
-    std::string server_desc = "RPC server at " + config_.server_address + ":" + 
-                              std::to_string(config_.server_port);
-    setup_rpc_transport(std::move(tcp_client), server_desc);
+    auto connect_result = tcp_client->connect();
+    if (connect_result) {  // Attempt connection (logging handled in setup_rpc_transport)
+        std::string server_desc = "RPC server at " + config_.server_address + ":" + 
+                                  std::to_string(config_.server_port);
+        setup_rpc_transport(std::move(tcp_client), server_desc);
+    } else {
+        log_warn("Failed to connect to RPC server at " + config_.server_address + ":" + 
+                 std::to_string(config_.server_port) + ". Will retry in main loop.");
+    }
 
     // --- App Registration Client (Service) ---
     // This service handles connection lifecycle, handshake, registration, and heartbeats
@@ -56,8 +60,8 @@ bool App::initialize() {
         auto tcp = std::make_unique<transport::tcp::tcp_client>(
             config_.server_address, config_.server_port);
         
-        auto connect_result = tcp->connect();
-        if (connect_result) {
+        auto hw_connect_result = tcp->connect();
+        if (hw_connect_result) {
             hw_transport_ = std::move(tcp);
             hw_client_ = std::make_unique<hw::hw_client>(*hw_transport_);
             log_info("HardwareClient connected\n");

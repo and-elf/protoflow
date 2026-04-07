@@ -87,6 +87,7 @@ struct FsmImplT {
         | fsm::when<State::Disconnected, Event::Shutdown>()
             .stay()
         | fsm::when<State::Connecting, Event::Connected>()
+            .then(std::function<void()>{})
             .to<State::Registering>()
         | fsm::when<State::Connecting, Event::Disconnected>()
             .to<State::Disconnected>()
@@ -148,6 +149,7 @@ struct FsmImplT {
             
             // Connecting state transitions
             | fsm::when<State::Connecting, Event::Connected>()
+                .then(std::function<void()>([c](){ c->on_connected(); }))
                 .to<State::Registering>()
             | fsm::when<State::Connecting, Event::Disconnected>()
                 .to<State::Disconnected>()
@@ -246,6 +248,7 @@ AppRegistrationClient::AppRegistrationClient(Config config)
     , reconnect_count_(0)
     , current_backoff_delay_(config_.reconnect_delay)
     , reconnect_timer_initialized_(false)
+    , pending_connected_event_(false)
 {
     PROTOFLOW_LOG_INFO(*this, "Creating AppRegistrationClient: " << config_to_string(config_));
     create_fsm();
@@ -278,6 +281,7 @@ void AppRegistrationClient::process_event(Event event) {
 // Service lifecycle
 void AppRegistrationClient::start() {
     PROTOFLOW_LOG_INFO(*this, "[" << name() << "] Starting");
+    std::cerr << "[CLIENT] start() called, processing Connect event\n";
     process_event(Event::Connect);
 }
 
@@ -287,7 +291,14 @@ void AppRegistrationClient::stop() {
 }
 
 void AppRegistrationClient::poll() {
-    // Check timeouts
+    // Check if we need to send the deferred Connected event
+    if (pending_connected_event_ && state_ == State::Connecting) {
+        std::cerr << "[CLIENT] poll() sending pending Connected event\n";
+        pending_connected_event_ = false;
+        process_event(Event::Connected);
+    }
+    
+    // Check timeouts and state transitions
     if (state_ == State::Registered) {
         check_heartbeat_timer();
     } else if (state_ == State::Connecting) {
@@ -339,9 +350,14 @@ void AppRegistrationClient::handle(service::Message&& msg) {
 // Generate outbound messages to runtime
 std::vector<service::Message> AppRegistrationClient::generate_outbound() {
     std::vector<service::Message> messages;
+    int count = 0;
     while (!outbound_queue_.empty()) {
         messages.push_back(std::move(outbound_queue_.front()));
         outbound_queue_.pop();
+        count++;
+    }
+    if (count > 0) {
+        std::cerr << "[CLIENT_DEBUG] Generating " << count << " outbound messages\n";
     }
     return messages;
 }
@@ -352,15 +368,18 @@ std::vector<service::Message> AppRegistrationClient::generate_outbound() {
 
 void AppRegistrationClient::on_connect() {
     PROTOFLOW_LOG_INFO(*this, "Initiating connection to " << config_.server_address << ":" << config_.server_port);
+    std::cerr << "[CLIENT] on_connect() called\n";
     connection_start_ = std::chrono::steady_clock::now();
     
-    // Connection logic handled by transport managed by App
-    // Just transition to connected when connection is established
-    process_event(Event::Connected);
+    // Set flag to send Connected event on next poll() call
+    // (can't send it directly because FSM hasn't updated state yet)
+    pending_connected_event_ = true;
+    std::cerr << "[CLIENT] on_connect() - pending Connected event for next poll\n";
 }
 
 void AppRegistrationClient::on_connected() {
     PROTOFLOW_LOG_INFO(*this, "Connection established, sending HELLO");
+    std::cerr << "[CLIENT] on_connected() called - queuing HELLO message (state=" << static_cast<int>(state_) << ")\n";
     
     // Send HELLO message
     hello_msg msg{};
@@ -371,11 +390,14 @@ void AppRegistrationClient::on_connected() {
         sizeof(msg)
     );
     
-    outbound_queue_.push(make_protocol_message(request::hello, payload));
+    auto hello_msg_obj = make_protocol_message(request::hello, payload);
+    std::cerr << "[CLIENT] HELLO message size=" << hello_msg_obj.data.size() << "\n";
+    outbound_queue_.push(std::move(hello_msg_obj));
 }
 
 void AppRegistrationClient::on_handshake_complete() {
     PROTOFLOW_LOG_INFO(*this, "Handshake complete, registering app: " << config_.app_name);
+    std::cerr << "[CLIENT] on_handshake_complete() - queuing REGISTER_APP\n";
     
     // Build REGISTER_APP message with endpoints
     std::vector<std::byte> payload;

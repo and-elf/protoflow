@@ -12,8 +12,13 @@ RpcServerService::RpcServerService(
     std::unique_ptr<rpc::transport_interface> server_transport,
     const RpcServerConfig& config
 )
-    : client_timeout_seconds_(config.client_timeout_seconds),
-      server_transport_(std::move(server_transport))
+    : Service({protoflow::app_registration_protocol::response::hello_ack,
+               protoflow::app_registration_protocol::response::register_ack,
+               protoflow::app_registration_protocol::response::heartbeat_ack,
+               protoflow::app_registration_protocol::response::unregister_app_ack,
+               protoflow::app_registration_protocol::response::error})
+    , client_timeout_seconds_(config.client_timeout_seconds)
+    , server_transport_(std::move(server_transport))
 {
 }
 
@@ -92,6 +97,46 @@ void RpcServerService::poll() {
 
 void RpcServerService::handle(service::Message&& msg) {
     using namespace rpc_service;
+    
+    // Check if this is an app registration protocol response (types 130-134)
+    if (msg.header.type >= messaging::MessageTypes::AppRegistrationResponses &&
+        msg.header.type <= messaging::MessageTypes::AppRegistrationResponses + 4) {
+        // This is a response from AppRegistrationService
+        std::cerr << "[RPC_HANDLE] Received response type " << msg.header.type 
+                  << " for client " << last_request_client_id_ << "\n";
+        
+        if (last_request_client_id_ != UINT32_MAX && clients_.find(last_request_client_id_) != clients_.end()) {
+            // Wrap response back into wire protocol format
+            auto client = clients_[last_request_client_id_].get();
+            
+            // Build wire message: [cmd (2 bytes)][size (2 bytes)][payload]
+            std::vector<std::byte> wire_msg;
+            
+            // Command (response type)
+            uint16_t cmd_val = static_cast<uint16_t>(msg.header.type);
+            wire_msg.push_back(std::byte(cmd_val & 0xFF));
+            wire_msg.push_back(std::byte((cmd_val >> 8) & 0xFF));
+            
+            // Size of payload
+            uint16_t size_val = static_cast<uint16_t>(msg.data.size());
+            wire_msg.push_back(std::byte(size_val & 0xFF));
+            wire_msg.push_back(std::byte((size_val >> 8) & 0xFF));
+            
+            // Append payload
+            for (auto byte : msg.data) {
+                wire_msg.push_back(byte);
+            }
+            
+            // Queue to client's pending sends
+            client->pending_sends.push_back(std::move(wire_msg));
+            std::cerr << "[RPC_HANDLE] Queued response of " << msg.data.size() 
+                      << " bytes to client " << last_request_client_id_ << "\n";
+            
+            // Try to send immediately
+            try_send_pending(client);
+        }
+        return;
+    }
     
     // Handle send requests to connected clients
     if (msg.header.type == RpcMessageTypes::SendRequest) {
@@ -271,6 +316,11 @@ void RpcServerService::try_receive(ClientConnection* client) {
                         .type(cmd_val)  // Use the app protocol request type directly
                         .payload(std::move(payload))
                         .build();
+                    
+                    // Track which client sent this request
+                    last_request_client_id_ = client->id;
+                    std::cerr << "[RPC] Storing client " << client->id << " for pending request\n";
+                    
                     write(std::move(msg));
                     return;
                 }

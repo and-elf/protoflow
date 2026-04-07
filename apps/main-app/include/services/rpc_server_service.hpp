@@ -61,6 +61,7 @@ public:
     std::unique_ptr<rpc::transport_interface> server_transport_;
     bool listening_{false};
     ConnectionId next_connection_id_{1};
+    ConnectionId last_request_client_id_{0};  // Track which client sent the last request
     
     std::unordered_map<ConnectionId, std::unique_ptr<ClientConnection>> clients_;
 };

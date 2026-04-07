@@ -58,7 +58,7 @@ struct StoredLog {
 /// LoggingService can filter, store, and forward logs to sinks
 class LoggingService : public service::Service {
 public:
-    LoggingService() = default;
+    LoggingService() : Service({messaging::MessageTypes::Log}) {}
     
     /// Set minimum log level to process (default: Info)
     void set_min_level(Level min_level) {
@@ -112,12 +112,12 @@ public:
 
 protected:
     void handle(service::Message&& msg) override {
-        // Handle log messages
-        if (msg.header.type == static_cast<uint32_t>(LogMessageType::Log)) {
+        // Handle log messages using global messaging type
+        if (msg.header.type == messaging::MessageTypes::Log) {
             auto log_msg = LogMessage::deserialize(msg.bytes());
             process_log(log_msg, msg.header.source);
         }
-        // Handle log query requests
+        // Handle log query requests (internal type)
         else if (msg.header.type == static_cast<uint32_t>(LogMessageType::LogRequest)) {
             auto request = LogRequest::deserialize(msg.bytes());
             handle_log_request(request);

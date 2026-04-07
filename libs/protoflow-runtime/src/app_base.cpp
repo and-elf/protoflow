@@ -88,6 +88,8 @@ void AppBase::route_messages() {
         while (auto opt = source->pop_outbound()) {
             auto msg = std::move(*opt);
             
+            std::cerr << "[ROUTE_DEBUG] Message type=" << int(msg.type()) << "\n";
+            
             // Find all services interested in this message type
             std::vector<service::Service*> interested;
             for (auto& dest : services_) {
@@ -109,8 +111,13 @@ void AppBase::route_messages() {
                 }
                 
                 if (wants_it) {
+                    std::cerr << "[ROUTE_DEBUG]   -> Routing to interested service\n";
                     interested.push_back(dest.get());
                 }
+            }
+            
+            if (interested.empty()) {
+                std::cerr << "[ROUTE_DEBUG]   -> No interested services\n";
             }
             
             // Deliver to all interested services (copy except last, which gets moved)
@@ -153,7 +160,10 @@ void AppBase::route_rpc_messages() {
     // Send registration client outbound messages over RPC transport
     while (auto msg = reg_client->pop_outbound()) {
         if (transport->is_connected()) {
+            std::cerr << "[RPC_DEBUG] Sending " << msg->data.size() << " bytes via RPC transport\n";
             transport->send(std::span<const std::byte>(msg->data));
+        } else {
+            std::cerr << "[RPC_DEBUG] Transport not connected, dropping " << msg->data.size() << " bytes\n";
         }
     }
 
@@ -161,6 +171,7 @@ void AppBase::route_rpc_messages() {
     if (transport->is_connected()) {
         auto result = transport->receive(8192);
         if (result.has_value() && !result->empty()) {
+            std::cerr << "[RPC_DEBUG] Received " << result->size() << " bytes via RPC transport\n";
             protoflow::messaging::MessageHeader header;
             header.type = protoflow::messaging::MessageTypes::Payload;
             protoflow::messaging::Message msg{header, std::move(result.value())};
@@ -173,6 +184,7 @@ void AppBase::setup_rpc_transport(std::unique_ptr<protoflow::rpc::transport_inte
                                    std::string_view server_desc) noexcept {
     if (!transport) {
         log_error("RPC transport is null\n");
+        std::cerr << "[SETUP_RPC] transport is null\n";
         return;
     }
 
@@ -180,13 +192,13 @@ void AppBase::setup_rpc_transport(std::unique_ptr<protoflow::rpc::transport_inte
     
     if (transport->is_connected()) {
         log_info("Connected to " + desc_str + "\n");
-         set_rpc_transport(std::move(transport));
+        std::cerr << "[SETUP_RPC] Connected to " << desc_str << " - setting transport\n";
+        set_rpc_transport(std::move(transport));
     } else {
         log_error("Failed to connect to " + desc_str);
-         return;
+        std::cerr << "[SETUP_RPC] Not connected to " << desc_str << " - NOT setting transport\n";
+        return;
     }
-    
-    set_rpc_transport(std::move(transport));
 }
 
 void AppBase::on_signal(int signal) {
