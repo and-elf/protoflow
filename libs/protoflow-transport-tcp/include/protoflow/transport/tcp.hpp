@@ -29,6 +29,7 @@ struct tcp_config {
     uint32_t write_timeout_ms{1000};
     size_t buffer_size{8192};
     bool reuse_addr{true};
+    bool reuse_port{false};  // Allow multiple sockets to bind to same port
     bool nodelay{true};  // Disable Nagle's algorithm
 };
 

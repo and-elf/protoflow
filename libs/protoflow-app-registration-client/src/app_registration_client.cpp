@@ -248,7 +248,6 @@ AppRegistrationClient::AppRegistrationClient(Config config)
     , reconnect_count_(0)
     , current_backoff_delay_(config_.reconnect_delay)
     , reconnect_timer_initialized_(false)
-    , pending_connected_event_(false)
 {
     PROTOFLOW_LOG_INFO(*this, "Creating AppRegistrationClient: " << config_to_string(config_));
     create_fsm();
@@ -281,7 +280,6 @@ void AppRegistrationClient::process_event(Event event) {
 // Service lifecycle
 void AppRegistrationClient::start() {
     PROTOFLOW_LOG_INFO(*this, "[" << name() << "] Starting");
-    std::cerr << "[CLIENT] start() called, processing Connect event\n";
     process_event(Event::Connect);
 }
 
@@ -291,13 +289,6 @@ void AppRegistrationClient::stop() {
 }
 
 void AppRegistrationClient::poll() {
-    // Check if we need to send the deferred Connected event
-    if (pending_connected_event_ && state_ == State::Connecting) {
-        std::cerr << "[CLIENT] poll() sending pending Connected event\n";
-        pending_connected_event_ = false;
-        process_event(Event::Connected);
-    }
-    
     // Check timeouts and state transitions
     if (state_ == State::Registered) {
         check_heartbeat_timer();
@@ -368,18 +359,14 @@ std::vector<service::Message> AppRegistrationClient::generate_outbound() {
 
 void AppRegistrationClient::on_connect() {
     PROTOFLOW_LOG_INFO(*this, "Initiating connection to " << config_.server_address << ":" << config_.server_port);
-    std::cerr << "[CLIENT] on_connect() called\n";
     connection_start_ = std::chrono::steady_clock::now();
     
-    // Set flag to send Connected event on next poll() call
-    // (can't send it directly because FSM hasn't updated state yet)
-    pending_connected_event_ = true;
-    std::cerr << "[CLIENT] on_connect() - pending Connected event for next poll\n";
+    // In a real implementation, this would establish a TCP connection
+    // For now, we're in Connecting state and waiting for a server response
 }
 
 void AppRegistrationClient::on_connected() {
     PROTOFLOW_LOG_INFO(*this, "Connection established, sending HELLO");
-    std::cerr << "[CLIENT] on_connected() called - queuing HELLO message (state=" << static_cast<int>(state_) << ")\n";
     
     // Send HELLO message
     hello_msg msg{};
@@ -390,9 +377,7 @@ void AppRegistrationClient::on_connected() {
         sizeof(msg)
     );
     
-    auto hello_msg_obj = make_protocol_message(request::hello, payload);
-    std::cerr << "[CLIENT] HELLO message size=" << hello_msg_obj.data.size() << "\n";
-    outbound_queue_.push(std::move(hello_msg_obj));
+    outbound_queue_.push(make_protocol_message(request::hello, payload));
 }
 
 void AppRegistrationClient::on_handshake_complete() {
@@ -615,8 +600,9 @@ void AppRegistrationClient::check_connection_timeout() {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - connection_start_);
     
     if (elapsed >= config_.connection_timeout) {
-        PROTOFLOW_LOG_ERROR(*this, "[" << name() << "] Connection timeout");
-        process_event(Event::FatalError);
+        PROTOFLOW_LOG_ERROR(*this, "[" << name() << "] Connection timeout - no response received");
+        // Don't change state without a response - transition back to Disconnected for retry
+        process_event(Event::Disconnected);
     }
 }
 

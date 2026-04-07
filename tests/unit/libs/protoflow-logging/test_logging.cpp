@@ -49,7 +49,7 @@ TEST(LoggingTest, LoggingServiceFiltering) {
         auto data = log.serialize();
         auto msg = messaging::MessageBuilder{}
             .from(1)
-            .type(static_cast<uint32_t>(logging::LogMessageType::Log))
+            .type(static_cast<uint32_t>(messaging::MessageTypes::Log))
             .priority(messaging::Priority::Normal)
             .payload(std::as_bytes(std::span(data)))
             .build();
@@ -92,7 +92,7 @@ TEST(LoggingTest, LoggingServiceMaxStorage) {
         auto data = log.serialize();
         auto msg = messaging::MessageBuilder{}
             .from(1)
-            .type(static_cast<uint32_t>(logging::LogMessageType::Log))
+            .type(static_cast<uint32_t>(messaging::MessageTypes::Log))
             .priority(messaging::Priority::Normal)
             .payload(std::as_bytes(std::span(data)))
             .build();
@@ -120,7 +120,7 @@ TEST(LoggingTest, LoggingServiceClear) {
         auto log = logging::LogMessage(logging::Level::Info, "Test");
         auto data = log.serialize();
         auto msg = messaging::MessageBuilder{}
-            .type(static_cast<uint32_t>(logging::LogMessageType::Log))
+            .type(static_cast<uint32_t>(messaging::MessageTypes::Log))
             .priority(messaging::Priority::Normal)
             .payload(std::as_bytes(std::span(data)))
             .build();

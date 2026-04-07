@@ -67,16 +67,26 @@ std::expected<std::vector<std::byte>, std::string> rpc_client_base::receive_payl
         return std::unexpected("Payload size exceeds maximum");
     }
 
-    auto result = transport.receive(size);
-    if (!result.has_value()) {
-        return std::unexpected(result.error());
+    std::vector<std::byte> buffer;
+    buffer.reserve(size);
+
+    // Read in a loop until we have all bytes (TCP may fragment packets)
+    while (buffer.size() < size) {
+        size_t remaining = size - buffer.size();
+        auto result = transport.receive(remaining);
+        
+        if (!result.has_value()) {
+            return std::unexpected(result.error());
+        }
+
+        if (result->empty()) {
+            return std::unexpected("Connection closed by peer");
+        }
+
+        buffer.insert(buffer.end(), result->begin(), result->end());
     }
 
-    if (result->size() != size) {
-        return std::unexpected("Incomplete payload received");
-    }
-
-    return result;
+    return buffer;
 }
 
 bool rpc_client_base::send_with_header(transport_interface& transport, cmd command,

@@ -157,9 +157,7 @@ TEST_F(AppRegistrationClientFsmTest, StatePersistsAcrossPolls) {
     
     // Should still be in a connecting-related state or transitioned to failed
     State final_state = client.current_state();
-    EXPECT_TRUE(final_state == state_after_start || 
-                final_state == State::Failed ||
-                final_state == State::Disconnected);
+    EXPECT_TRUE(final_state == state_after_start);
 }
 
 TEST_F(AppRegistrationClientFsmTest, IsConnectedAccuracy) {

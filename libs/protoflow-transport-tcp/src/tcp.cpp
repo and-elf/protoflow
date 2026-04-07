@@ -412,6 +412,16 @@ std::expected<void, tcp_error> tcp_server::set_socket_options() {
         }
     }
 
+    // Set SO_REUSEPORT
+    #ifdef SO_REUSEPORT
+    if (config_.reuse_port) {
+        int flag = 1;
+        if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
+            return std::unexpected(make_error(errno, "Failed to set SO_REUSEPORT"));
+        }
+    }
+    #endif
+
     return {};
 }
 

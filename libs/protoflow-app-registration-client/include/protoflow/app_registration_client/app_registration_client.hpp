@@ -100,7 +100,6 @@ private:
     uint32_t reconnect_count_;
     std::chrono::milliseconds current_backoff_delay_;
     bool reconnect_timer_initialized_;
-    bool pending_connected_event_;  // Flag to send Connected event on next poll
     
     // Error tracking
     std::string registration_error_;
