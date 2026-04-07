@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libgtest-dev libgmock-dev
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build main-app
+        run: cmake --build build --target main-app -j$(nproc)
+
+      - name: Build skeleton-app
+        run: cmake --build build --target skeleton-app -j$(nproc)
+
+      - name: Build all
+        run: cmake --build build -j$(nproc)
+
+      - name: Run unit tests
+        run: cd build && ctest --test-dir tests/unit --output-on-failure
+
+      - name: Run integration tests
+        run: cd build && ctest --test-dir tests/integration --output-on-failure
+
+      - name: Run system tests
+        run: cd build && ctest --test-dir tests/system --output-on-failure
+
+      - name: Build Debian package
+        run: cd build && cpack
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: protoflow-packages
+          path: build/*.deb
