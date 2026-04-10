@@ -152,7 +152,7 @@ void AppBase::init_app_registration_client() noexcept {
     services_.push_back(std::move(client));
 }
 
-std::optional<std::reference_wrapper<app_registration_client::AppRegistrationClient>> AppBase::get_app_registration_client() noexcept {
+std::optional<std::reference_wrapper<app_registration_client::AppRegistrationClient>> AppBase::get_app_registration_client() const noexcept {
     // Find the app registration client in services_
     for (auto& svc : services_) {
         if (auto* client = dynamic_cast<app_registration_client::AppRegistrationClient*>(svc.get())) {
@@ -238,6 +238,22 @@ void AppBase::log_fatal(const std::string& msg) noexcept {
     if (logger_) {
         logger_->log_fatal(msg);
     }
+}
+
+bool AppBase::is_registered() const noexcept {
+    auto reg_client_opt = get_app_registration_client();
+    if (reg_client_opt) {
+        return reg_client_opt->get().is_registered();
+    }
+    return false;
+}
+
+bool AppBase::is_connected() const noexcept {
+    auto reg_client_opt = get_app_registration_client();
+    if (reg_client_opt) {
+        return reg_client_opt->get().is_connected();
+    }
+    return false;
 }
 
 } // namespace protoflow::runtime

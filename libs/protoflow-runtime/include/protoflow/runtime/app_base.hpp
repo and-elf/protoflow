@@ -107,6 +107,13 @@ public:
         return running_.load();
     }
 
+    [[nodiscard]] const std::string& app_name() const noexcept {
+        return config_.app_name;
+    }
+
+    [[nodiscard]] bool is_registered() const noexcept;
+    [[nodiscard]] bool is_connected() const noexcept;
+
 protected:
     /// Execute one cycle of the main loop
     /// Default implementation:
@@ -134,7 +141,7 @@ protected:
 
     /// Get the built-in app registration client service
     /// Returns optional reference to the client; should always have a value if AppBase was properly constructed
-    [[nodiscard]] std::optional<std::reference_wrapper<app_registration_client::AppRegistrationClient>> get_app_registration_client() noexcept;
+    [[nodiscard]] std::optional<std::reference_wrapper<app_registration_client::AppRegistrationClient>> get_app_registration_client() const noexcept;
 
     /// Configure app registration client
     /// Replaces the placeholder app registration client with one fully configured
