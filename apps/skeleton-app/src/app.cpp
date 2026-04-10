@@ -75,9 +75,7 @@ std::string App::render_fragment(std::string_view fragment_id) {
     }
 
     // Get the built-in app registration client
-    auto reg_client_opt = get_app_registration_client();
-    auto& reg_client = reg_client_opt.value().get();
-    bool registered = reg_client.is_registered();
+    auto registered = is_registered();
     bool hw_available = hw_client_ != nullptr;
 
     // Generic lambda lets us compose nodes whose badge types differ
@@ -104,9 +102,7 @@ std::string App::render_fragment(std::string_view fragment_id) {
 
 std::string App::get_state_json() const {
     // Get the built-in app registration client
-    auto reg_client_opt = const_cast<App*>(this)->get_app_registration_client();
-    auto& reg_client = reg_client_opt.value().get();
-    bool registered = reg_client.is_registered();
+    auto registered = is_registered();
     bool hw_available = hw_client_ != nullptr;
     return "{\"app\":\"" + config_.app_name + "\","
            "\"version\":\"" + config_.version + "\","
