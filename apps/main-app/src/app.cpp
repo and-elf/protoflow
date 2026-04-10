@@ -12,7 +12,7 @@
 namespace protoflow::mainapp {
 
 App::App(Config config)
-    : AppBase(AppBase::Config{.cycle_time = std::chrono::milliseconds(10), .app_name = ""}),
+    : AppBase(AppBase::Config{.cycle_time = std::chrono::milliseconds(10), .app_name = "main-app"}),
       config_(std::move(config)) {
 }
 
