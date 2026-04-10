@@ -17,12 +17,6 @@ struct Config {
     /// List of endpoints this app provides
     std::vector<std::string> endpoints;
     
-    /// Server address to connect to
-    std::string server_address = "localhost";
-    
-    /// Server port to connect to
-    uint16_t server_port = 8080;
-    
     /// Heartbeat interval (how often to send heartbeat messages)
     std::chrono::seconds heartbeat_interval{30};
     
@@ -43,10 +37,7 @@ struct Config {
     
     /// Validate configuration
     [[nodiscard]] bool is_valid() const noexcept {
-        return !app_name.empty() && 
-               !endpoints.empty() && 
-               !server_address.empty() &&
-               server_port > 0;
+        return !app_name.empty();
     }
 };
 

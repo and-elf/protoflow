@@ -8,6 +8,7 @@
 #include <iostream>
 #include <thread>
 #include <csignal>
+#include <cstdlib>
 
 namespace protoflow::runtime {
 
@@ -24,6 +25,8 @@ void AppBase::signal_handler_impl(int signal) {
 AppBase::AppBase(Config config)
     : config_(std::move(config)), g_instance_(this) {
     g_app_instance = this;
+
+    init_app_registration_client();
 }
 
 AppBase::~AppBase() {
@@ -132,78 +135,62 @@ void AppBase::route_messages() {
             }
         }
     }
-
-    // Also handle RPC transport I/O if configured (bridges external transport to services)
-    route_rpc_messages();
-}
-
-void AppBase::route_rpc_messages() {
-    if (!rpc_transport_) {
-        return;
-    }
-
-    // Find registration client in services
-    app_registration_client::AppRegistrationClient* reg_client = nullptr;
-    for (auto& service : services_) {
-        if (auto* client = dynamic_cast<app_registration_client::AppRegistrationClient*>(service.get())) {
-            reg_client = client;
-            break;
-        }
-    }
-
-    if (!reg_client) {
-        return;
-    }
-
-    auto* transport = static_cast<protoflow::rpc::transport_interface*>(rpc_transport_);
-
-    // Send registration client outbound messages over RPC transport
-    while (auto msg = reg_client->pop_outbound()) {
-        if (transport->is_connected()) {
-            std::cerr << "[RPC_DEBUG] Sending " << msg->data.size() << " bytes via RPC transport\n";
-            transport->send(std::span<const std::byte>(msg->data));
-        } else {
-            std::cerr << "[RPC_DEBUG] Transport not connected, dropping " << msg->data.size() << " bytes\n";
-        }
-    }
-
-    // Receive data from RPC transport and forward to registration client
-    if (transport->is_connected()) {
-        auto result = transport->receive(8192);
-        if (result.has_value() && !result->empty()) {
-            std::cerr << "[RPC_DEBUG] Received " << result->size() << " bytes via RPC transport\n";
-            protoflow::messaging::MessageHeader header;
-            header.type = protoflow::messaging::MessageTypes::Payload;
-            protoflow::messaging::Message msg{header, std::move(result.value())};
-            reg_client->on_message(std::move(msg));
-        }
-    }
-}
-
-void AppBase::setup_rpc_transport(std::unique_ptr<protoflow::rpc::transport_interface> transport,
-                                   std::string_view server_desc) noexcept {
-    if (!transport) {
-        log_error("RPC transport is null\n");
-        std::cerr << "[SETUP_RPC] transport is null\n";
-        return;
-    }
-
-    std::string desc_str = server_desc.empty() ? "RPC server" : std::string(server_desc);
-    
-    if (transport->is_connected()) {
-        log_info("Connected to " + desc_str + "\n");
-        std::cerr << "[SETUP_RPC] Connected to " << desc_str << " - setting transport\n";
-        set_rpc_transport(std::move(transport));
-    } else {
-        log_error("Failed to connect to " + desc_str);
-        std::cerr << "[SETUP_RPC] Not connected to " << desc_str << " - NOT setting transport\n";
-        return;
-    }
 }
 
 void AppBase::on_signal(int signal) {
     (void)signal;  // Suppress unused parameter warning
     shutdown();
+}
+
+void AppBase::init_app_registration_client() noexcept {
+    // Create a minimal app registration client with default config
+    // The app will call configure_app_registration() to fully configure it
+    app_registration_client::Config config;
+    config.app_name = config_.app_name;
+    auto client = std::make_unique<app_registration_client::AppRegistrationClient>(config);
+    
+    services_.push_back(std::move(client));
+}
+
+std::optional<std::reference_wrapper<app_registration_client::AppRegistrationClient>> AppBase::get_app_registration_client() noexcept {
+    // Find the app registration client in services_
+    for (auto& svc : services_) {
+        if (auto* client = dynamic_cast<app_registration_client::AppRegistrationClient*>(svc.get())) {
+            return std::ref(*client);
+        }
+    }
+    return std::nullopt;
+}
+
+bool AppBase::configure_app_registration(std::string_view app_name,
+                                         std::span<const std::string> endpoints) noexcept {
+    if (app_name.empty()) {
+        log_error("Invalid parameters: app_name must not be empty");
+        return false;
+    }
+
+    // Create new app registration client config with proper parameters
+    app_registration_client::Config reg_config;
+    reg_config.app_name = std::string(app_name);
+    reg_config.version = 1;
+    
+    // Copy endpoints
+    reg_config.endpoints.assign(endpoints.begin(), endpoints.end());
+    
+    // Create new client with the full config
+    auto new_client = std::make_unique<app_registration_client::AppRegistrationClient>(
+        std::move(reg_config));
+    
+    // Find and replace the old placeholder client in services_
+    for (auto& svc : services_) {
+        if (dynamic_cast<app_registration_client::AppRegistrationClient*>(svc.get())) {
+            svc = std::move(new_client);
+            break;
+        }
+    }
+    
+    log_info("App registration configured as '" + std::string(app_name) + "'");
+    return true;
 }
 
 logging::LoggingService* AppBase::setup_logging(const config::LoggingConfig& log_config) noexcept {

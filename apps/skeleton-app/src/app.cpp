@@ -24,36 +24,21 @@ bool App::initialize() {
     // Initialize message router
     router_ = std::make_unique<messaging::Router>();
 
-    // --- RPC Transport (TCP to main app) ---
-    // App creates transport, connects it, then AppBase handles logging and storage
-    auto tcp_client = std::make_unique<transport::tcp::tcp_client>(
+    // --- RPC Connection Setup via Factory (clean API) ---
+    // Create transport and attempt connection
+    auto tcp_transport = std::make_unique<transport::tcp::tcp_client>(
         config_.server_address, config_.server_port);
     
-    auto connect_result = tcp_client->connect();
-    if (connect_result) {  // Attempt connection (logging handled in setup_rpc_transport)
-        std::string server_desc = "RPC server at " + config_.server_address + ":" + 
-                                  std::to_string(config_.server_port);
-        setup_rpc_transport(std::move(tcp_client), server_desc);
+    if (tcp_transport->connect()) {
+        // Connection successful - configure the built-in app registration client
+        // (transport management is separate from app registration protocol)
+        configure_app_registration(config_.app_name,
+                                  config_.endpoints);
+        log_info("AppRegistrationClient configured\n");
     } else {
         log_warn("Failed to connect to RPC server at " + config_.server_address + ":" + 
                  std::to_string(config_.server_port) + ". Will retry in main loop.");
     }
-
-    // --- App Registration Client (Service) ---
-    // This service handles connection lifecycle, handshake, registration, and heartbeats
-    // AppBase automatically routes messages between this service and the RPC transport
-    app_registration_client::Config reg_config;
-    reg_config.app_name = config_.app_name;
-    reg_config.version = 1;
-    reg_config.endpoints = config_.endpoints;
-    reg_config.server_address = config_.server_address;
-    reg_config.server_port = config_.server_port;
-    reg_config.heartbeat_interval = config_.heartbeat_interval;
-
-    // App registration client is a service—just add to services_ and let AppBase manage it
-    services_.push_back(std::make_unique<app_registration_client::AppRegistrationClient>(
-        std::move(reg_config)));
-    log_info("AppRegistrationClient configured\n");
 
     // --- Hardware Client (optional) ---
     if (config_.enable_hw_client && !config_.hardware_resources.empty()) {
@@ -89,16 +74,10 @@ std::string App::render_fragment(std::string_view fragment_id) {
         return {};
     }
 
-    // Find registration client in services
-    auto* reg_client = static_cast<app_registration_client::AppRegistrationClient*>(nullptr);
-    for (const auto& svc : services_) {
-        if (auto* client = dynamic_cast<app_registration_client::AppRegistrationClient*>(svc.get())) {
-            reg_client = client;
-            break;
-        }
-    }
-
-    bool registered = reg_client && reg_client->is_registered();
+    // Get the built-in app registration client
+    auto reg_client_opt = get_app_registration_client();
+    auto& reg_client = reg_client_opt.value().get();
+    bool registered = reg_client.is_registered();
     bool hw_available = hw_client_ != nullptr;
 
     // Generic lambda lets us compose nodes whose badge types differ
@@ -124,16 +103,10 @@ std::string App::render_fragment(std::string_view fragment_id) {
 }
 
 std::string App::get_state_json() const {
-    // Find registration client in services
-    auto* reg_client = static_cast<app_registration_client::AppRegistrationClient*>(nullptr);
-    for (const auto& svc : services_) {
-        if (auto* client = dynamic_cast<app_registration_client::AppRegistrationClient*>(svc.get())) {
-            reg_client = client;
-            break;
-        }
-    }
-
-    bool registered = reg_client && reg_client->is_registered();
+    // Get the built-in app registration client
+    auto reg_client_opt = const_cast<App*>(this)->get_app_registration_client();
+    auto& reg_client = reg_client_opt.value().get();
+    bool registered = reg_client.is_registered();
     bool hw_available = hw_client_ != nullptr;
     return "{\"app\":\"" + config_.app_name + "\","
            "\"version\":\"" + config_.version + "\","
