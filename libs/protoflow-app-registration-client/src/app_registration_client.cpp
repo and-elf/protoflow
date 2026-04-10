@@ -28,7 +28,6 @@ namespace {
         std::ostringstream oss;
         oss << "{ app: " << cfg.app_name 
             << ", version: " << cfg.version
-            << ", server: " << cfg.server_address << ":" << cfg.server_port
             << ", endpoints: [";
         for (size_t i = 0; i < cfg.endpoints.size(); ++i) {
             if (i > 0) oss << ", ";
@@ -358,7 +357,7 @@ std::vector<service::Message> AppRegistrationClient::generate_outbound() {
 // ============================================================================
 
 void AppRegistrationClient::on_connect() {
-    PROTOFLOW_LOG_INFO(*this, "Initiating connection to " << config_.server_address << ":" << config_.server_port);
+    PROTOFLOW_LOG_INFO(*this, "Initiating connection to registration server");
     connection_start_ = std::chrono::steady_clock::now();
     
     // In a real implementation, this would establish a TCP connection

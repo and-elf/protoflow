@@ -12,7 +12,7 @@
 namespace protoflow::mainapp {
 
 App::App(Config config)
-    : AppBase(AppBase::Config{.cycle_time = std::chrono::milliseconds(10)}),
+    : AppBase(AppBase::Config{.cycle_time = std::chrono::milliseconds(10), .app_name = "main-app"}),
       config_(std::move(config)) {
 }
 
@@ -20,12 +20,12 @@ bool App::initialize() {
     log_info("Initializing Protoflow Main Application Runtime...\n");
     
     // Initialize logging (AppBase handles service creation and management)
-    log_info("  - Setting up logging...\n");
     auto log_config = config::load_logging_config(config_.log_config_path);
     if (!log_config) {
         std::cerr << "Warning: Failed to load logging config from " 
         << config_.log_config_path << "\nUsing default logging configuration.\n";
     }
+    log_info("  - logging is configured\n");
     setup_logging(log_config.value_or(config::LoggingConfig{}));
     
     // Create services
@@ -55,7 +55,7 @@ bool App::initialize() {
     }
 
     if (config_.enable_http) {
-        std::cout << "    * HTTPService (event-driven)\n";
+        log_warn("    * HTTPService (event-driven)\n");
         auto http_service = std::make_unique<HTTPService>();
         get_services().push_back(std::move(http_service));
 
