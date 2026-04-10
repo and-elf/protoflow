@@ -7,6 +7,8 @@
 #include <vector>
 #include <cstddef>
 #include <span>
+#include <optional>
+#include <functional>
 
 namespace protoflow::config {
 struct LoggingConfig;
@@ -72,10 +74,13 @@ class AppBase {
 public:
     struct Config {
         /// Main loop cycle time
-        std::chrono::milliseconds cycle_time{10};
+        const std::chrono::milliseconds cycle_time{10};
         
         /// Maximum number of messages to route per cycle
-        std::size_t max_messages_per_cycle{100};
+        const std::size_t max_messages_per_cycle{100};
+
+        // Application name for logging and registration (optional, can be set in registration config)
+        const std::string app_name;
     };
 
     explicit AppBase(Config config);
@@ -127,22 +132,30 @@ protected:
         return services_;
     }
 
-    /// Get RPC transport (may be null if not configured)
-    protoflow::rpc::transport_interface* get_rpc_transport() const noexcept {
-        return static_cast<protoflow::rpc::transport_interface*>(rpc_transport_);
-    }
+    /// Get the built-in app registration client service
+    /// Returns optional reference to the client; should always have a value if AppBase was properly constructed
+    [[nodiscard]] std::optional<std::reference_wrapper<app_registration_client::AppRegistrationClient>> get_app_registration_client() noexcept;
 
-    /// Set RPC transport (called by subclasses during initialize)
-    void set_rpc_transport(std::unique_ptr<protoflow::rpc::transport_interface> transport) noexcept {
-        rpc_transport_ = transport.release();
-    }
-
-    /// Setup RPC transport with connection and logging
-    /// Handles connect attempt, logs result, and stores transport
-    /// \param transport The transport to connect and manage
-    /// \param server_desc Optional description for logging (e.g., "RPC server at 127.0.0.1:9999")
-    void setup_rpc_transport(std::unique_ptr<protoflow::rpc::transport_interface> transport,
-                             std::string_view server_desc = "") noexcept;
+    /// Configure app registration client
+    /// Replaces the placeholder app registration client with one fully configured
+    /// with the specified parameters. The RPC transport layer is managed separately.
+    /// 
+    /// \param app_name Application name for registration (must not be empty)
+    /// \param endpoints RPC endpoints this app provides (can be empty)
+    /// \return true if configuration succeeded
+    /// 
+    /// Example:
+    /// ```cpp
+    /// configure_app_registration("my-app", {"endpoint1", "endpoint2"});
+    /// 
+    /// // Separately, set up transport:
+    /// auto tcp_transport = std::make_unique<MyTransport>("localhost", 9000);
+    /// if (tcp_transport->connect()) {
+    ///     // Transport is now ready for RPC communication
+    /// }
+    /// ```
+    bool configure_app_registration(std::string_view app_name,
+                                   std::span<const std::string> endpoints = {}) noexcept;
 
     /// Get logging service (for apps that need direct access)
     [[nodiscard]] logging::LoggingService* get_logger() const noexcept {
@@ -164,6 +177,10 @@ protected:
 
     std::vector<std::unique_ptr<service::Service>> services_;
 
+    /// Initialize and register the built-in app registration client
+    /// Called once during AppBase construction to set up the service
+    void init_app_registration_client() noexcept;
+
 private:
     /// Global signal handler (static bridge to instance method)
     static void signal_handler_impl(int signal);
@@ -175,14 +192,8 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<AppBase*> g_instance_{nullptr};
 
-    // RPC transport for connecting to main app (optional, owned by AppBase)
-    void* rpc_transport_{nullptr};
-
     // Logging service (owned by AppBase, stored in services_)
     logging::LoggingService* logger_{nullptr};
-
-    // Helper functions for message routing
-    void route_rpc_messages();
 };
 
 } // namespace protoflow::runtime
