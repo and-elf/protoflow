@@ -173,6 +173,16 @@ sudo ./protoflow-main-app --port 9000 --hw-config /path/to/hardware.conf
 - [apps/main-app/README.md](apps/main-app/README.md) — Usage and configuration
 - [apps/main-app/IMPLEMENTATION.md](apps/main-app/IMPLEMENTATION.md) — Implementation details
 - [apps/main-app/ARCHITECTURE-DIAGRAM.txt](apps/main-app/ARCHITECTURE-DIAGRAM.txt) — Visual architecture
+- [apps/main-app/README.md](apps/main-app/README.md) - Usage and configuration
+- [apps/main-app/IMPLEMENTATION.md](apps/main-app/IMPLEMENTATION.md) - Implementation details
+- [apps/main-app/ARCHITECTURE-DIAGRAM.txt](apps/main-app/ARCHITECTURE-DIAGRAM.txt) - Visual architecture
+
+Main app:
+- Runs as **root** with exclusive hardware access
+- Listens on TCP port for app registration
+- Serves HTTP for UI aggregation
+- Provides hardware arbitration service
+- Aggregates JSON state from all apps
 
 Registered applications:
 - Run as **unprivileged users**
