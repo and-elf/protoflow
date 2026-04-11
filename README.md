@@ -60,22 +60,34 @@ cmake -B build -DENABLE_WARNINGS_AS_ERRORS=ON
 
 ```
 protoflow/
-├── ARCHITECTURE.md         # System design and architecture
-├── cmake/                  # CMake modules and macros
-├── docs/                   # Library documentation
-├── libs/                   # Protoflow libraries
-│   ├── protoflow-runtime/
-│   ├── protoflow-messaging/
-│   ├── protoflow-logging/
-│   ├── protoflow-service/
-│   ├── protoflow-fsm/
-│   ├── protoflow-rpc/
-│   ├── protoflow-transport-tcp/
-│   ├── protoflow-transport-mqtt/
-│   └── protoflow-html-fragment/
-├── apps/                   # Applications
-│   └── main-app/          # Main application (runs as root)
-└── tests/                  # Test suites
+├── ARCHITECTURE.md                       # System design and architecture
+├── cmake/                                # CMake modules and macros
+├── docs/                                 # Library documentation
+├── libs/                                 # Protoflow libraries
+│   ├── protoflow-runtime/                # Core runtime, router, scheduler
+│   ├── protoflow-messaging/              # Message passing infrastructure
+│   ├── protoflow-logging/                # Policy-injected logging with sinks
+│   ├── protoflow-service/                # Service base class and mailbox
+│   ├── protoflow-config/                 # Configuration management
+│   ├── protoflow-fsm/                    # Compile-time finite state machines
+│   ├── protoflow-fsm-table/              # FSM transition table definitions
+│   ├── protoflow-rpc/                    # RPC framework core
+│   ├── protoflow-rpc-client/             # RPC client implementation
+│   ├── protoflow-rpc-server/             # RPC server implementation
+│   ├── protoflow-rpc-service/            # RPC service layer
+│   ├── protoflow-rpc-protocol/           # RPC protocol definitions
+│   ├── protoflow-transport-tcp/          # TCP transport adapter
+│   ├── protoflow-transport-mqtt/         # MQTT transport adapter
+│   ├── protoflow-transport-unix/         # Unix socket transport adapter
+│   ├── protoflow-http/                   # HTTP server and client
+│   ├── protoflow-html-fragment/          # Compile-time HTML fragment generation
+│   ├── protoflow-app-registration-client/   # App registration client
+│   ├── protoflow-app-registration-protocol/ # App registration protocol definitions
+│   ├── protoflow-hw-client/              # Hardware access client
+│   └── protoflow-hw-protocol/            # Hardware protocol definitions
+├── apps/                                 # Applications
+│   └── main-app/                         # Main application (runs as root)
+└── tests/                                # Test suites
     ├── unit/
     ├── integration/
     └── system/
@@ -83,18 +95,49 @@ protoflow/
 
 ## Libraries
 
-- **protoflow-runtime**: Core runtime, message router, and scheduler
-- **protoflow-messaging**: Message passing infrastructure
-- **protoflow-logging**: Policy-injected logging with sinks
-- **protoflow-service**: Service base class and mailbox infrastructure
-- **protoflow-fsm**: Compile-time validated finite state machines
-- **protoflow-rpc**: TCP-based RPC framework
-- **protoflow-transport-tcp**: TCP transport adapter
-- **protoflow-transport-mqtt**: MQTT transport adapter
-- **protoflow-transport-unix**: Unix transport adapter
-- **protoflow-html-fragment**: Compile-time HTML generation
+### Core Runtime
 
-See [docs/](docs/) for detailed library documentation.
+- **protoflow-runtime** — Core single-threaded runtime, message router, and deterministic scheduler. The heart of the framework; all services run inside it.
+- **protoflow-messaging** — Message passing infrastructure. Defines the envelope format, mailboxes, and delivery guarantees used across the framework.
+- **protoflow-service** — Service base class and per-service mailbox. Every application-level service inherits from this and registers with the runtime.
+- **protoflow-config** — Configuration management. Loads and validates runtime configuration consumed by the runtime and individual services.
+- **protoflow-logging** — Policy-injected structured logging with pluggable sinks (file, stdout, network). Logging behavior is injected at startup, not hard-coded.
+
+### Finite State Machines
+
+- **protoflow-fsm** — Lightweight compile-time FSM primitives. States, events, and transitions are validated at compile time with no runtime overhead.
+- **protoflow-fsm-table** — FSM transition table definitions and helpers. Provides higher-level table-driven FSM construction on top of `protoflow-fsm`.
+
+### RPC Layer
+
+- **protoflow-rpc** — RPC framework core. Defines the request/response contract and ties together the client, server, and protocol libraries.
+- **protoflow-rpc-protocol** — Wire protocol definitions shared by client and server (message framing, serialization format).
+- **protoflow-rpc-client** — RPC client implementation. Used by unprivileged apps to call services hosted in the main app.
+- **protoflow-rpc-server** — RPC server implementation. Hosts callable services and dispatches incoming requests to registered handlers.
+- **protoflow-rpc-service** — RPC service layer. Bridges the RPC server with the protoflow service model so RPC handlers run inside the runtime.
+
+### Transports
+
+- **protoflow-transport-tcp** — TCP transport adapter. Default transport for inter-process communication between registered apps and the main app.
+- **protoflow-transport-mqtt** — MQTT transport adapter. Optional pub/sub transport for IoT or broker-based deployments.
+- **protoflow-transport-unix** — Unix domain socket transport adapter. Low-latency IPC for co-located processes on the same host.
+
+### HTTP and UI
+
+- **protoflow-http** — Embedded HTTP server and client. Used by the main app to serve aggregated UI and expose JSON state endpoints.
+- **protoflow-html-fragment** — Compile-time HTML fragment generation. Apps produce typed HTML fragments that are aggregated by the main app's HTTP service.
+
+### App Registration
+
+- **protoflow-app-registration-protocol** — Protocol definitions for the app registration handshake (message types, sequence, fields).
+- **protoflow-app-registration-client** — Client-side app registration library. Registered apps use this to announce themselves to the main app over TCP.
+
+### Hardware Arbitration
+
+- **protoflow-hw-protocol** — Hardware protocol definitions. Describes hardware resource request/response messages shared by client and the arbitration service.
+- **protoflow-hw-client** — Hardware access client. Unprivileged apps use this to request hardware I/O via the main app's `HardwareArbitrationService`, never touching hardware directly.
+
+See [docs/](docs/) for detailed per-library documentation.
 
 ## Main Application
 
@@ -107,9 +150,9 @@ The main application (`protoflow-main-app`):
 - Provides hardware arbitration service
 - Aggregates JSON state from all apps
 - Implements three core services:
-  - **ApplicationRegistrationService** - App lifecycle and UI aggregation
-  - **HardwareArbitrationService** - Hardware I/O proxy
-  - **HTTPService** - HTTP endpoints and content negotiation
+  - **ApplicationRegistrationService** — App lifecycle and UI aggregation
+  - **HardwareArbitrationService** — Hardware I/O proxy
+  - **HTTPService** — HTTP endpoints and content negotiation
 
 **Run**:
 ```bash
@@ -127,6 +170,9 @@ sudo ./protoflow-main-app --port 9000 --hw-config /path/to/hardware.conf
 ```
 
 **Documentation**:
+- [apps/main-app/README.md](apps/main-app/README.md) — Usage and configuration
+- [apps/main-app/IMPLEMENTATION.md](apps/main-app/IMPLEMENTATION.md) — Implementation details
+- [apps/main-app/ARCHITECTURE-DIAGRAM.txt](apps/main-app/ARCHITECTURE-DIAGRAM.txt) — Visual architecture
 - [apps/main-app/README.md](apps/main-app/README.md) - Usage and configuration
 - [apps/main-app/IMPLEMENTATION.md](apps/main-app/IMPLEMENTATION.md) - Implementation details
 - [apps/main-app/ARCHITECTURE-DIAGRAM.txt](apps/main-app/ARCHITECTURE-DIAGRAM.txt) - Visual architecture
@@ -203,3 +249,42 @@ cd build && ctest
 ## Contributing
 
 [To be determined]
+
+## 🧩 Components
+
+### AppBase
+[Paste Agent's description of AppBase here]
+
+### Libraries
+- **lib-name**: [Agent description]
+- **lib-name**: [Agent description]
+
+### Getting Started (Skeleton App)
+You can find a reference implementation in `apps/skeleton-app`. Use this as a base for building new services...
+
+---
+
+## 🏗 Project Architecture & Components
+
+### AppBase (`protoflow::runtime::AppBase`)
+`AppBase` is the core base class for all Protoflow applications. It manages the boilerplate of application lifecycles, including:
+* **Lifecycle & Signal Handling**: Graceful shutdown via `SIGINT`/`SIGTERM`.
+* **Deterministic Execution**: A main loop that executes `.cycle()` at configurable tick rates.
+* **Message Routing**: Acts as the central hub for isolated services and RPC transports.
+* **Component Management**: Initializes logging, service lists, and RPC transport clients.
+
+### 📚 Core Libraries (`/libs`)
+Protoflow follows a strictly isolated, message-first architecture:
+* **protoflow-runtime**: The "heart" containing the message router and service scheduler.
+* **protoflow-service**: Provides base `Service` classes and thread-safe `Mailbox<T>`.
+* **protoflow-messaging**: Abstractions for inbound/outbound message queues.
+* **protoflow-fsm**: Compile-time Finite State Machine library for protocol-driven behavior.
+* **protoflow-rpc**: Transport-agnostic client/server model for inter-app communication.
+* **protoflow-logging**: Structured logging system for deep observability.
+
+### 🚀 Skeleton App (`/apps/skeleton-app`)
+The `skeleton-app` serves as the official template and reference implementation.
+* **Purpose**: Demonstrates app registration flows, hardware access (`protoflow-hw-client`), and RPC server loops.
+* **Usage**: Run it via CLI (e.g., `protoflow-skeleton-app -s <ip> -p <port>`) or use it as a template by duplicating the directory for new service development.
+
+---
